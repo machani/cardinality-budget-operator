@@ -1,0 +1,56 @@
+# Helm values for kube-prometheus-stack in the cb-dev lab cluster.
+# Install:
+#   helm --kube-context kind-cb-dev install kps prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f hack/lab/kube-prometheus-stack-values.yaml --version <chart version>
+# Record the chart version you install; the lab should be reproducible.
+
+# Short, predictable names: services become kps-prometheus, kps-alertmanager, kps-operator.
+fullnameOverride: kps
+
+prometheus:
+  prometheusSpec:
+    # ADR 0003: Prometheus overwrites the `namespace` label on every series with the namespace of the
+    # ServiceMonitor/PodMonitor that scraped it, so a team cannot claim another namespace's series.
+    # Required for Enforce mode.
+    enforcedNamespaceLabel: namespace
+
+    # The stack's own monitors (kube-state-metrics, kubelet, node-exporter, ...) report on objects in other
+    # namespaces through their `namespace` label. Overwriting it with "monitoring" would break them, so they
+    # are excluded. The operator's --exclude-series flag must match these exporters (ADR 0003).
+    excludedFromEnforcement:
+      - resource: servicemonitors
+        namespace: monitoring
+      - resource: podmonitors
+        namespace: monitoring
+      - resource: prometheusrules
+        namespace: monitoring
+
+    # Pick up ServiceMonitors, PodMonitors and rules from every namespace, not only those labelled with
+    # this Helm release. Team namespaces in the lab create their own monitors.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+
+    # Lab only: short retention, small footprint.
+    retention: 2d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+
+# kind binds these control-plane components to 127.0.0.1, so their targets would always show as down.
+# They are cluster infrastructure and not counted against any namespace budget anyway.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Not needed until the operator dashboard (F-0305). Saves memory on the lab box.
+grafana:
+  enabled: false

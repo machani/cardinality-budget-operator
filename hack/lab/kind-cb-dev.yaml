@@ -1,0 +1,12 @@
+# kind cluster for local development of the CardinalityBudget operator.
+# Create:  kind create cluster --config hack/lab/kind-cb-dev.yaml
+# Delete:  kind delete cluster --name cb-dev
+# kubectl context: kind-cb-dev
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cb-dev
+nodes:
+  # Runs the Kubernetes API server, etcd, scheduler and controller manager.
+  - role: control-plane
+  # Runs the workloads: Prometheus, exporters, the operator, and later the avalanche load generator.
+  - role: worker
