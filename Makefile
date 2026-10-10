@@ -106,6 +106,32 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
 
+##@ Verify
+
+.PHONY: verify
+verify: verify-tidy verify-generated verify-license ## Run the repository checks CI runs (tidy, generated files, license headers).
+
+.PHONY: verify-tidy
+verify-tidy: ## Fail if go.mod or go.sum are not tidy.
+	go mod tidy
+	@if [ -n "$$(git status --porcelain -- go.mod go.sum)" ]; then \
+		echo "go.mod/go.sum are not tidy; run 'go mod tidy' and commit:"; git status --porcelain -- go.mod go.sum; exit 1; \
+	fi
+
+.PHONY: verify-generated
+verify-generated: manifests generate ## Fail if generated code or manifests are out of date.
+	@if [ -n "$$(git status --porcelain -- api config)" ]; then \
+		echo "Generated files are out of date; run 'make manifests generate' and commit:"; git status --porcelain -- api config; exit 1; \
+	fi
+
+.PHONY: verify-license
+verify-license: ## Fail if a Go file lacks the Apache-2.0 license header.
+	bash hack/check-license.sh
+
+.PHONY: vulncheck
+vulncheck: ## Scan the code and its dependencies for known vulnerabilities.
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
 ##@ Build
 
 .PHONY: build
@@ -207,6 +233,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+GOVULNCHECK_VERSION ?= v1.1.4
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
