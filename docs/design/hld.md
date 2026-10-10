@@ -1,6 +1,6 @@
 # CardinalityBudget Operator — High Level Design
 
-2026-09-25 · Machani Vidyasagar · Updated 2026-10-04 (decisions in [ADR 0001–0011](../adr/README.md))
+2026-09-25 · Machani Vidyasagar · Updated 2026-10-10 (decisions in [ADR 0001–0012](../adr/README.md))
 
 ## Purpose and positioning
 
@@ -122,7 +122,7 @@ status:
 | `mode` | Chooses how far the operator may act; budgets start at Observe |
 | `gracePeriod` | Avoids enforcing on short spikes such as a rollout |
 | `maxMetricsToDrop` / `maxTotalDrops` | Caps each step and the total; CEL requires `maxMetricsToDrop <= maxTotalDrops` ([ADR 0006](../adr/0006-enforcement-safety.md)) |
-| `protectedMetrics` | Keeps SLO and health metrics safe from drop rules |
+| `protectedMetrics` | Keeps SLO and health metrics safe from drop rules; fully anchored RE2 patterns, an invalid pattern freezes the budget ([ADR 0012](../adr/0012-protected-metrics-validation.md)) |
 | `topMetrics` | Tells the team what to fix; capped to keep the object small in etcd |
 | `plannedDrops` | Dry run: what Enforce would drop next |
 | `enforcedDrops` | Records exactly what the operator changed, one entry per metric; per-monitor detail is in monitor annotations and Events ([ADR 0007](../adr/0007-drop-rule-ownership-and-write-strategy.md)) |
@@ -133,14 +133,14 @@ status:
 
 | Type | Meaning | Reasons |
 | --- | --- | --- |
-| `Ready` | Last reconcile succeeded and the measurement is valid and fresh | `MeasurementValid`; `BackendUnreachable`, `BackendWarmingUp`, `PartialData`, `Stale` |
+| `Ready` | Last reconcile succeeded, the spec is usable, and the measurement is valid and fresh | `MeasurementValid`; `InvalidSpec`, `BackendUnreachable`, `BackendWarmingUp`, `PartialData`, `Stale` |
 | `BackendReachable` | The backend answered and is ready | |
 | `BudgetExceeded` | Usage is at or above 100% | |
 | `Enforced` | Drop rules are applied and enforcement may continue | `Applied`; `Ineffective`, `LimitReached`, `ConfigReloadFailed`, `Reverted`, `RateLimited`, `Paused` |
 
 `Ineffective`, `ConfigReloadFailed` and `Reverted` pause the budget until the platform resumes it ([ADR 0008](../adr/0008-drift-pause-and-resume.md)). `RateLimited` clears on its own. `Paused` reflects the global kill switch.
 
-**Validation (CEL):** name is `default`; `maxActiveSeries > 0`; `warnThresholdPercent` 1-99; `maxMetricsToDrop` and `maxTotalDrops` 1-10; `maxMetricsToDrop <= maxTotalDrops`.
+**Validation (CEL):** name is `default`; `maxActiveSeries > 0`; `warnThresholdPercent` 1-99; `maxMetricsToDrop` and `maxTotalDrops` 1-10; `maxMetricsToDrop <= maxTotalDrops`; `protectedMetrics` at most 64 items of 1-256 characters, and valid regexes where CEL supports the check. The operator also checks the patterns at runtime ([ADR 0012](../adr/0012-protected-metrics-validation.md)).
 
 Printer columns for `kubectl get`: Phase, Series, Limit, Usage %, Mode, Age.
 
@@ -155,7 +155,7 @@ Each reconcile measures, decides a phase, keeps existing drops correct, acts acc
 
 1. **Fetch** the CardinalityBudget. If it is being deleted, remove every owned drop rule from every monitor, then remove the finalizer `cardinality.telemetry-compass.com/cleanup` (blocked while the kill switch is on). Otherwise ensure the finalizer is present.
 2. **Resume**: if the resume annotation differs from `status.lastResumeToken`, clear the pause, remove `Reverted` entries, record the token.
-3. **Measure** through the usage provider: active series and the top 10 metrics for the namespace, excluding cluster exporters ([ADR 0003](../adr/0003-series-attribution.md)). If the measurement is not valid or not fresh: phase `Unknown`, `Ready=False`, **no drop rules added or removed**, write status, requeue ([ADR 0005](../adr/0005-measurement-validity-and-backend-access.md)).
+3. **Measure** through the usage provider: active series and the top 10 metrics for the namespace, excluding cluster exporters ([ADR 0003](../adr/0003-series-attribution.md)). If the measurement is not valid or not fresh: phase `Unknown`, `Ready=False`, **no drop rules added or removed**, write status, requeue ([ADR 0005](../adr/0005-measurement-validity-and-backend-access.md)). If any `protectedMetrics` pattern does not compile: `Ready=False` with `InvalidSpec`, empty `plannedDrops`, no drop rules added or removed; the phase and usage still update ([ADR 0012](../adr/0012-protected-metrics-validation.md)).
 4. **Compute** usage percent and the phase; set `exceededSince` when usage first reaches 100%, clear it when usage falls below.
 5. **Maintain existing drops** ([ADR 0006](../adr/0006-enforcement-safety.md), [ADR 0008](../adr/0008-drift-pause-and-resume.md), [ADR 0009](../adr/0009-spec-changes-and-restore-order.md)):
    - check that Prometheus reloaded after the last change; if not within 5 minutes, pause with `ConfigReloadFailed`;
@@ -200,6 +200,7 @@ Enforce mode deletes data, so these rules override every feature.
 | Only the platform team writes budgets | [ADR 0002](../adr/0002-budget-ownership-and-rbac.md) |
 | Enforce mode requires Prometheus `enforcedNamespaceLabel` | [ADR 0003](../adr/0003-series-attribution.md) |
 | No drops added or removed on an invalid or stale measurement | [ADR 0005](../adr/0005-measurement-validity-and-backend-access.md) |
+| No drops added or removed while a `protectedMetrics` pattern is invalid | [ADR 0012](../adr/0012-protected-metrics-validation.md) |
 | Never drop a protected metric or a recording-rule name; never exceed `maxMetricsToDrop` per step or `maxTotalDrops` in total | [ADR 0006](../adr/0006-enforcement-safety.md) |
 | Wait a settle period between steps; stop if Prometheus fails to reload; stop if a drop is ineffective | [ADR 0006](../adr/0006-enforcement-safety.md) |
 | Never remove or reorder the team's own relabel rules | [ADR 0007](../adr/0007-drop-rule-ownership-and-write-strategy.md) |
