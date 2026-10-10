@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- cardinality_v1alpha1_cardinalitybudget.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

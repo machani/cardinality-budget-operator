@@ -1,0 +1,9 @@
+apiVersion: cardinality.telemetry-compass.com/v1alpha1
+kind: CardinalityBudget
+metadata:
+  labels:
+    app.kubernetes.io/name: cardinality-budget-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: cardinalitybudget-sample
+spec:
+  # TODO(user): Add fields here
