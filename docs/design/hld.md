@@ -1,6 +1,6 @@
 # CardinalityBudget Operator — High Level Design
 
-2026-09-25 · Machani Vidyasagar · Updated 2026-10-10 (decisions in [ADR 0001–0012](../adr/README.md))
+2026-09-25 · Machani Vidyasagar · Updated 2026-10-10 (decisions in [ADR 0001–0013](../adr/README.md))
 
 ## Purpose and positioning
 
@@ -217,7 +217,7 @@ Cluster-wide settings are operator flags, set by the platform team.
 | `--prometheus-url` | (required) | Backend URL |
 | `--prometheus-http-config` | (none) | Prometheus-format HTTP client config file: auth, TLS, proxy ([ADR 0005](../adr/0005-measurement-validity-and-backend-access.md)) |
 | `--namespace-label` | `namespace` | Label that attributes a series to a namespace ([ADR 0003](../adr/0003-series-attribution.md)) |
-| `--exclude-series` | kube-prometheus-stack exporter jobs | PromQL matchers excluding cluster exporters ([ADR 0003](../adr/0003-series-attribution.md)) |
+| `--exclude-series` | `job!~"apiserver\|coredns\|kube-state-metrics\|kubelet\|node-exporter",job!=""` | PromQL matchers excluding cluster exporters and recording-rule outputs ([ADR 0003](../adr/0003-series-attribution.md), [ADR 0013](../adr/0013-default-series-exclusion.md)) |
 | `--measure-interval` | `5m` | Time between measurements |
 | `--query-timeout` | `30s` | Timeout per backend query |
 | `--backend-warmup` | `15m` | Minimum Prometheus uptime before a measurement is valid |
@@ -340,6 +340,7 @@ The biggest risk is acting on wrong data or against GitOps; the design answers b
 | --- | --- |
 | Argo CD or Flux reverts drop rules, causing a patch loop | V1 detects reverts, never re-applies, pauses the budget; GitOps guide documents `ignoreDifferences` and Flux options ([ADR 0008](../adr/0008-drift-pause-and-resume.md)) |
 | Dropping a metric that dashboards or alerts depend on | `protectedMetrics`, `maxMetricsToDrop`, `maxTotalDrops`, grace period, Warn-mode dry run |
+| A monitor excluded from `enforcedNamespaceLabel` (e.g. the API server, in `default`) counts against its targets' namespace | Default `--exclude-series` covers the kube-prometheus-stack jobs; documented rule: every excluded monitor's job must be in the flag ([ADR 0013](../adr/0013-default-series-exclusion.md)) |
 | A team spoofs another namespace's label and triggers drops on its monitors | `enforcedNamespaceLabel` required for Enforce mode ([ADR 0003](../adr/0003-series-attribution.md)) |
 | Falsely low counts after a Prometheus restart trigger restores | Validity checks block both drops and restores ([ADR 0005](../adr/0005-measurement-validity-and-backend-access.md)) |
 | Over-dropping because the effect of a drop takes minutes to appear | Settle period tracked in status ([ADR 0006](../adr/0006-enforcement-safety.md)) |

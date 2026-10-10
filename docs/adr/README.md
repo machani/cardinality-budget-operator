@@ -24,3 +24,4 @@ Rules:
 | [0010](0010-rate-limit-and-kill-switch.md) | Global rate limit and kill switch | Accepted |
 | [0011](0011-version-support-policy.md) | Version support policy | Accepted |
 | [0012](0012-protected-metrics-validation.md) | Protected metrics validation | Accepted |
+| [0013](0013-default-series-exclusion.md) | Default series exclusion (refines 0003) | Accepted |
