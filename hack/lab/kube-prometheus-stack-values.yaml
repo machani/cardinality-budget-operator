@@ -2,7 +2,7 @@
 # Install:
 #   helm --kube-context kind-cb-dev install kps prometheus-community/kube-prometheus-stack \
 #     -n monitoring --create-namespace -f hack/lab/kube-prometheus-stack-values.yaml --version <chart version>
-# Record the chart version you install; the lab should be reproducible.
+# Tested with chart 92.3.0 (Prometheus Operator v0.94.1) on kind v0.33.0 / Kubernetes v1.37.0.
 
 # Short, predictable names: services become kps-prometheus, kps-alertmanager, kps-operator.
 fullnameOverride: kps
