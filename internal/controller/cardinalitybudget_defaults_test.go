@@ -28,13 +28,16 @@ import (
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
 )
 
+// testNamespace is the namespace the API tests create budgets in.
+const testNamespace = "default"
+
 // The API server (inside envtest) applies the +kubebuilder:default markers, so these tests check the
 // generated CRD schema, not Go code.
 var _ = Describe("CardinalityBudget API defaults", func() {
 	ctx := context.Background()
 
 	It("fills every default when only maxActiveSeries is set", func() {
-		key := types.NamespacedName{Name: "defaults-test", Namespace: "default"}
+		key := types.NamespacedName{Name: "defaults-test", Namespace: testNamespace}
 		budget := &cardinalityv1alpha1.CardinalityBudget{
 			ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
 			Spec:       cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000},
@@ -64,7 +67,7 @@ var _ = Describe("CardinalityBudget API defaults", func() {
 			}},
 		} {
 			budget := &cardinalityv1alpha1.CardinalityBudget{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
 				Spec:       spec,
 			}
 			Expect(k8sClient.Create(ctx, budget)).NotTo(Succeed(), "case %s should be rejected", name)

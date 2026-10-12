@@ -35,7 +35,7 @@ var _ = Describe("CardinalityBudget status subresource", func() {
 
 	newBudget := func(name string) *cardinalityv1alpha1.CardinalityBudget {
 		budget := &cardinalityv1alpha1.CardinalityBudget{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
 			Spec:       cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000},
 		}
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
@@ -62,7 +62,7 @@ var _ = Describe("CardinalityBudget status subresource", func() {
 		Expect(k8sClient.Status().Update(ctx, budget)).To(Succeed())
 
 		got := &cardinalityv1alpha1.CardinalityBudget{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: "default"}, got)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: testNamespace}, got)).To(Succeed())
 		Expect(got.Status.Phase).To(Equal(cardinalityv1alpha1.PhaseEnforcing))
 		Expect(*got.Status.ActiveSeries).To(Equal(int64(61230)))
 		Expect(*got.Status.UsagePercent).To(Equal(int32(122)))
@@ -76,7 +76,7 @@ var _ = Describe("CardinalityBudget status subresource", func() {
 		Expect(k8sClient.Update(ctx, budget)).To(Succeed())
 
 		got := &cardinalityv1alpha1.CardinalityBudget{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: "default"}, got)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: testNamespace}, got)).To(Succeed())
 		Expect(got.Status.Phase).To(BeEmpty())
 	})
 
