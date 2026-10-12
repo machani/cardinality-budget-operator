@@ -166,7 +166,7 @@ func TestNeverMeasuredIsNotStale(t *testing.T) {
 
 func TestPlannedDrops(t *testing.T) {
 	top := []usage.MetricCount{
-		{Name: "up", Series: 900},                       // protected (exact, anchored)
+		{Name: "up", Series: 900},                        // protected (exact, anchored)
 		{Name: "namespace:requests:rate5m", Series: 800}, // recording rule
 		{Name: "http_requests_total", Series: 700},
 		{Name: "slo_latency_bucket", Series: 600}, // protected by slo_.*
@@ -241,13 +241,13 @@ func TestStateEvents(t *testing.T) {
 			events = append(events, e.Type+"/"+e.Reason)
 		}
 	}
-	record(measured(100, t0))                                         // first measurement: Healthy
-	record(measured(120, t0.Add(time.Minute)))                        // unchanged state: no Event
-	record(measured(950, t0.Add(2*time.Minute)))                      // Warning
+	record(measured(100, t0))                                          // first measurement: Healthy
+	record(measured(120, t0.Add(time.Minute)))                         // unchanged state: no Event
+	record(measured(950, t0.Add(2*time.Minute)))                       // Warning
 	record(invalidAt(usage.BackendWarmingUp, t0.Add(3*time.Minute)))   // Unknown, warming up
 	record(invalidAt(usage.BackendUnreachable, t0.Add(4*time.Minute))) // same phase, new reason
 	record(invalidAt(usage.BackendUnreachable, t0.Add(5*time.Minute))) // unchanged: no Event
-	record(measured(100, t0.Add(6*time.Minute)))                      // back to Healthy
+	record(measured(100, t0.Add(6*time.Minute)))                       // back to Healthy
 
 	want := []string{"Normal/BudgetHealthy", "Warning/BudgetWarning", "Warning/BackendWarmingUp",
 		"Warning/BackendUnreachable", "Normal/BudgetHealthy"}

@@ -9,19 +9,9 @@ rules:
   resources:
   - cardinalitybudgets
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - cardinality.telemetry-compass.com
-  resources:
-  - cardinalitybudgets/finalizers
-  verbs:
-  - update
 - apiGroups:
   - cardinality.telemetry-compass.com
   resources:
@@ -30,3 +20,10 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
