@@ -1,6 +1,6 @@
 # CardinalityBudget Operator — High Level Design
 
-2026-09-25 · Machani Vidyasagar · Updated 2026-10-10 (decisions in [ADR 0001–0013](../adr/README.md))
+2026-09-25 · Machani Vidyasagar · Updated 2026-10-12 (decisions in [ADR 0001–0014](../adr/README.md))
 
 ## Purpose and positioning
 
@@ -139,6 +139,8 @@ status:
 | `Enforced` | Drop rules are applied and enforcement may continue | `Applied`; `Ineffective`, `LimitReached`, `ConfigReloadFailed`, `Reverted`, `RateLimited`, `Paused` |
 
 `Ineffective`, `ConfigReloadFailed` and `Reverted` pause the budget until the platform resumes it ([ADR 0008](../adr/0008-drift-pause-and-resume.md)). `RateLimited` clears on its own. `Paused` reflects the global kill switch.
+
+**Defaults** ([ADR 0014](../adr/0014-spec-defaults.md)): `warnThresholdPercent: 90`, `mode: Observe`, `gracePeriod: 30m`, `maxMetricsToDrop: 1`, `maxTotalDrops: 5`; `maxActiveSeries` is required. The example above uses illustrative values.
 
 **Validation (CEL):** name is `default`; `maxActiveSeries > 0`; `warnThresholdPercent` 1-99; `maxMetricsToDrop` and `maxTotalDrops` 1-10; `maxMetricsToDrop <= maxTotalDrops`; `protectedMetrics` at most 64 items of 1-256 characters, and valid regexes where CEL supports the check. The operator also checks the patterns at runtime ([ADR 0012](../adr/0012-protected-metrics-validation.md)).
 

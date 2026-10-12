@@ -21,19 +21,80 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// After changing this file, run `make manifests generate` (never edit the generated files).
+// Defaults and ranges: HLD "API design", ADR 0006 (maxTotalDrops), ADR 0014 (other defaults).
 
-// CardinalityBudgetSpec defines the desired state of CardinalityBudget
+// BudgetMode is how far the operator may act on a budget.
+// +kubebuilder:validation:Enum=Observe;Warn;Enforce
+type BudgetMode string
+
+const (
+	// ModeObserve measures and reports in status only.
+	ModeObserve BudgetMode = "Observe"
+	// ModeWarn also emits Events and lists plannedDrops.
+	ModeWarn BudgetMode = "Warn"
+	// ModeEnforce also adds drop rules to monitors when the budget is exceeded.
+	ModeEnforce BudgetMode = "Enforce"
+)
+
+// CardinalityBudgetSpec defines the desired state of CardinalityBudget.
 type CardinalityBudgetSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// maxActiveSeries is the budget: the number of active series the namespace may have.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	MaxActiveSeries int64 `json:"maxActiveSeries"`
 
-	// foo is an example field of CardinalityBudget. Edit cardinalitybudget_types.go to remove/update
+	// warnThresholdPercent is the usage, in percent of maxActiveSeries, at which the budget enters Warning.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=99
+	// +kubebuilder:default=90
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	WarnThresholdPercent int32 `json:"warnThresholdPercent,omitempty"`
+
+	// mode chooses how far the operator may act. Budgets start in Observe (ADR 0002).
+	// +kubebuilder:default=Observe
+	// +optional
+	Mode BudgetMode `json:"mode,omitempty"`
+
+	// enforcement holds the limits that apply in Enforce mode. Defaulted to {} so that its own
+	// defaults apply even when the block is left out.
+	// +kubebuilder:default={}
+	// +optional
+	Enforcement EnforcementSpec `json:"enforcement,omitzero"`
+}
+
+// EnforcementSpec limits what the operator may drop in Enforce mode.
+type EnforcementSpec struct {
+	// gracePeriod is how long usage must stay at or above 100% before the first drop.
+	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:default="30m"
+	// +optional
+	GracePeriod metav1.Duration `json:"gracePeriod,omitzero"`
+
+	// maxMetricsToDrop is the most metrics dropped in one enforcement step.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	// +kubebuilder:default=1
+	// +optional
+	MaxMetricsToDrop int32 `json:"maxMetricsToDrop,omitempty"`
+
+	// maxTotalDrops is the most metrics dropped at the same time for this budget (ADR 0006).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	// +kubebuilder:default=5
+	// +optional
+	MaxTotalDrops int32 `json:"maxTotalDrops,omitempty"`
+
+	// protectedMetrics are regular expressions for metric names that are never dropped.
+	// Each pattern is fully anchored, like Prometheus (ADR 0012).
+	// +listType=atomic
+	// +optional
+	ProtectedMetrics []string `json:"protectedMetrics,omitempty"`
+
+	// monitorSelector selects the ServiceMonitors and PodMonitors in the namespace that may receive drop
+	// rules. Empty or unset selects all of them.
+	// +optional
+	MonitorSelector *metav1.LabelSelector `json:"monitorSelector,omitempty"`
 }
 
 // CardinalityBudgetStatus defines the observed state of CardinalityBudget.

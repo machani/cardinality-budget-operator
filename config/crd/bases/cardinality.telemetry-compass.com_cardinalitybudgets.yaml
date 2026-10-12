@@ -39,10 +39,116 @@ spec:
           spec:
             description: spec defines the desired state of CardinalityBudget
             properties:
-              foo:
-                description: foo is an example field of CardinalityBudget. Edit cardinalitybudget_types.go
-                  to remove/update
+              enforcement:
+                default: {}
+                description: |-
+                  enforcement holds the limits that apply in Enforce mode. Defaulted to {} so that its own
+                  defaults apply even when the block is left out.
+                properties:
+                  gracePeriod:
+                    default: 30m
+                    description: gracePeriod is how long usage must stay at or above
+                      100% before the first drop.
+                    format: duration
+                    type: string
+                  maxMetricsToDrop:
+                    default: 1
+                    description: maxMetricsToDrop is the most metrics dropped in one
+                      enforcement step.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  maxTotalDrops:
+                    default: 5
+                    description: maxTotalDrops is the most metrics dropped at the
+                      same time for this budget (ADR 0006).
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  monitorSelector:
+                    description: |-
+                      monitorSelector selects the ServiceMonitors and PodMonitors in the namespace that may receive drop
+                      rules. Empty or unset selects all of them.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  protectedMetrics:
+                    description: |-
+                      protectedMetrics are regular expressions for metric names that are never dropped.
+                      Each pattern is fully anchored, like Prometheus (ADR 0012).
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+              maxActiveSeries:
+                description: 'maxActiveSeries is the budget: the number of active
+                  series the namespace may have.'
+                format: int64
+                minimum: 1
+                type: integer
+              mode:
+                default: Observe
+                description: mode chooses how far the operator may act. Budgets start
+                  in Observe (ADR 0002).
+                enum:
+                - Observe
+                - Warn
+                - Enforce
                 type: string
+              warnThresholdPercent:
+                default: 90
+                description: warnThresholdPercent is the usage, in percent of maxActiveSeries,
+                  at which the budget enters Warning.
+                format: int32
+                maximum: 99
+                minimum: 1
+                type: integer
+            required:
+            - maxActiveSeries
             type: object
           status:
             description: status defines the observed state of CardinalityBudget
