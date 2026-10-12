@@ -1,0 +1,17 @@
+# Budget for the demo namespace. avalanche produces about 1000 series plus a few scrape series, so this
+# limit starts Exceeded. Walk the phases by changing the limit:
+#   kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"maxActiveSeries":5000}}'  # Healthy
+#   kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"maxActiveSeries":1100}}'  # Warning
+#   kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"maxActiveSeries":900}}'   # Exceeded
+# Watch:  kubectl --context kind-cb-dev -n demo get cb -w
+apiVersion: cardinality.telemetry-compass.com/v1alpha1
+kind: CardinalityBudget
+metadata:
+  name: default
+  namespace: demo
+spec:
+  maxActiveSeries: 900
+  mode: Warn
+  enforcement:
+    protectedMetrics:
+      - "up"

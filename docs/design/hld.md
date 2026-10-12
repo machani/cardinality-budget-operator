@@ -1,6 +1,6 @@
 # CardinalityBudget Operator — High Level Design
 
-2026-09-25 · Machani Vidyasagar · Updated 2026-10-12 (decisions in [ADR 0001–0014](../adr/README.md))
+2026-09-25 · Machani Vidyasagar · Updated 2026-10-12 (decisions in [ADR 0001–0015](../adr/README.md))
 
 ## Purpose and positioning
 
@@ -134,8 +134,8 @@ status:
 | Type | Meaning | Reasons |
 | --- | --- | --- |
 | `Ready` | Last reconcile succeeded, the spec is usable, and the measurement is valid and fresh | `MeasurementValid`; `InvalidSpec`, `BackendUnreachable`, `BackendWarmingUp`, `PartialData`, `Stale` |
-| `BackendReachable` | The backend answered and is ready | |
-| `BudgetExceeded` | Usage is at or above 100% | |
+| `BackendReachable` | The backend answered and is ready | `BackendReady`; `BackendUnreachable`, `BackendWarmingUp` ([ADR 0015](../adr/0015-events-and-condition-reasons.md)) |
+| `BudgetExceeded` | Usage is at or above 100% | `OverBudget`; `WithinBudget` |
 | `Enforced` | Drop rules are applied and enforcement may continue | `Applied`; `Ineffective`, `LimitReached`, `ConfigReloadFailed`, `Reverted`, `RateLimited`, `Paused` |
 
 `Ineffective`, `ConfigReloadFailed` and `Reverted` pause the budget until the platform resumes it ([ADR 0008](../adr/0008-drift-pause-and-resume.md)). `RateLimited` clears on its own. `Paused` reflects the global kill switch.
@@ -165,8 +165,8 @@ Each reconcile measures, decides a phase, keeps existing drops correct, acts acc
    - detect drift (`Reverted`); extend drops to new or newly selected monitors; remove owned rules from deselected monitors;
    - restore any dropped metric that is now protected, immediately.
 6. **Act by mode**:
-   - Observe: status only.
-   - Warn: also Events and `plannedDrops`.
+   - Observe: status and one Event per state change ([ADR 0015](../adr/0015-events-and-condition-reasons.md)).
+   - Warn: also `plannedDrops`.
    - Enforce: also add drop rules when all hold: `now - exceededSince > gracePeriod`, settle period over, not paused, kill switch off, under `maxTotalDrops` and the hourly limit. Up to `maxMetricsToDrop` metrics per step, skipping protected metrics and names containing `:`.
    - Leaving Enforce: restore all drops gradually, whatever the usage.
 7. **Restore** when usage is below the warn threshold: one step per settle period, most recent drop first.
@@ -249,7 +249,7 @@ V1 delivers the complete measure-warn-enforce-undo loop against Prometheus 3.x o
 | Status and conditions | Phase, usage, top metrics, planned and enforced drops; conditions Ready, BackendReachable, BudgetExceeded, Enforced | `metav1.Condition` and observedGeneration |
 | Periodic requeue | Re-measure every 5 minutes by default | `RequeueAfter` for time-driven work |
 | Events | One Event per state change | EventRecorder |
-| Operator metrics | Per-budget gauges: series, limit, usage ratio, drops active; cluster gauges such as enforcement paused | controller-runtime metrics registry |
+| Operator metrics | Per-budget gauges (label `budget_namespace`): series, limit, usage ratio, drops active, measurement valid; cluster gauges such as enforcement paused | controller-runtime metrics registry |
 | Install and demo | Kustomize install; kind cluster with a synthetic high-cardinality app | envtest unit tests plus an end-to-end demo |
 
 ## V2 scope: many backends, smarter enforcement, GitOps-safe
