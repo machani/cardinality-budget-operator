@@ -33,7 +33,7 @@ import (
 var _ = Describe("CardinalityBudget Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
-			resourceName      = "test-resource"
+			resourceName      = budgetName
 			resourceNamespace = testNamespace
 		)
 

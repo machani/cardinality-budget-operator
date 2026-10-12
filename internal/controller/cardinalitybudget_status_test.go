@@ -33,18 +33,21 @@ import (
 var _ = Describe("CardinalityBudget status subresource", func() {
 	ctx := context.Background()
 
-	newBudget := func(name string) *cardinalityv1alpha1.CardinalityBudget {
-		budget := &cardinalityv1alpha1.CardinalityBudget{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
-			Spec:       cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000},
-		}
+	newBudget := func() *cardinalityv1alpha1.CardinalityBudget {
+		budget := budgetIn(newTestNamespace(ctx), cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000})
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, budget)).To(Succeed()) })
 		return budget
 	}
 
+	get := func(budget *cardinalityv1alpha1.CardinalityBudget) *cardinalityv1alpha1.CardinalityBudget {
+		got := &cardinalityv1alpha1.CardinalityBudget{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: budget.Namespace}, got)).To(Succeed())
+		return got
+	}
+
 	It("stores every status field written through the status endpoint", func() {
-		budget := newBudget("status-roundtrip")
+		budget := newBudget()
 		now := metav1.Now()
 		budget.Status = cardinalityv1alpha1.CardinalityBudgetStatus{
 			ObservedGeneration: budget.Generation,
@@ -61,8 +64,7 @@ var _ = Describe("CardinalityBudget status subresource", func() {
 		}
 		Expect(k8sClient.Status().Update(ctx, budget)).To(Succeed())
 
-		got := &cardinalityv1alpha1.CardinalityBudget{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: testNamespace}, got)).To(Succeed())
+		got := get(budget)
 		Expect(got.Status.Phase).To(Equal(cardinalityv1alpha1.PhaseEnforcing))
 		Expect(*got.Status.ActiveSeries).To(Equal(int64(61230)))
 		Expect(*got.Status.UsagePercent).To(Equal(int32(122)))
@@ -71,17 +73,15 @@ var _ = Describe("CardinalityBudget status subresource", func() {
 	})
 
 	It("ignores status changes sent with a normal update", func() {
-		budget := newBudget("status-ignored")
+		budget := newBudget()
 		budget.Status.Phase = cardinalityv1alpha1.PhaseExceeded
 		Expect(k8sClient.Update(ctx, budget)).To(Succeed())
 
-		got := &cardinalityv1alpha1.CardinalityBudget{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: testNamespace}, got)).To(Succeed())
-		Expect(got.Status.Phase).To(BeEmpty())
+		Expect(get(budget).Status.Phase).To(BeEmpty())
 	})
 
 	It("rejects an unknown phase", func() {
-		budget := newBudget("status-bad-phase")
+		budget := newBudget()
 		budget.Status.Phase = "Broken"
 		Expect(k8sClient.Status().Update(ctx, budget)).NotTo(Succeed())
 	})
