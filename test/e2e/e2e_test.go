@@ -268,6 +268,35 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})
 
+		It("should reconcile a CardinalityBudget in the cluster", func() {
+			// The e2e cluster has no Prometheus, so the deployed operator must report the backend as
+			// unreachable: phase Unknown, Ready=False/BackendUnreachable (ADR 0005). This proves the
+			// in-cluster operator watches budgets and may write their status (RBAC).
+			const budgetNamespace = "e2e-budget"
+			By("creating a namespace and a budget")
+			cmd := exec.Command("kubectl", "create", "ns", budgetNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "ns", budgetNamespace, "--wait=false"))
+			})
+
+			cmd = exec.Command("kubectl", "apply", "-n", budgetNamespace,
+				"-f", "config/samples/cardinality_v1alpha1_cardinalitybudget.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the operator to write the status")
+			verifyStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "cardinalitybudget", "default", "-n", budgetNamespace,
+					"-o", `jsonpath={.status.phase}/{.status.conditions[?(@.type=="Ready")].reason}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Unknown/BackendUnreachable"))
+			}
+			Eventually(verifyStatus, 2*time.Minute).Should(Succeed())
+		})
+
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.

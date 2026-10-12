@@ -38,6 +38,8 @@ import (
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
 	"github.com/machani/cardinality-budget-operator/internal/config"
 	"github.com/machani/cardinality-budget-operator/internal/controller"
+	operatormetrics "github.com/machani/cardinality-budget-operator/internal/metrics"
+	"github.com/machani/cardinality-budget-operator/internal/usage"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -200,9 +202,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	provider, err := usage.NewPrometheusProvider(usage.Settings{
+		URL:             operatorOpts.PrometheusURL,
+		HTTPConfig:      operatorOpts.HTTPConfig,
+		NamespaceLabel:  operatorOpts.NamespaceLabel,
+		ExcludeMatchers: operatorOpts.ExcludeMatchers,
+		QueryTimeout:    operatorOpts.QueryTimeout,
+		BackendWarmup:   operatorOpts.BackendWarmup,
+	})
+	if err != nil {
+		setupLog.Error(err, "Failed to create the usage provider")
+		os.Exit(1)
+	}
+	operatormetrics.SetEnforcementPaused(operatorOpts.EnforcementPaused)
+
 	if err := (&controller.CardinalityBudgetReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Provider:          provider,
+		Recorder:          mgr.GetEventRecorder("cardinality-budget-operator"),
+		MeasureInterval:   operatorOpts.MeasureInterval,
+		MaxMeasurementAge: operatorOpts.MaxMeasurementAge,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "cardinalitybudget")
 		os.Exit(1)

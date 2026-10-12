@@ -1,0 +1,59 @@
+# Synthetic high-cardinality workload for the lab (HLD "Install and demo").
+# avalanche exposes gauge-metric-count x series-count series (here 20 x 50 = 1000), scraped through a
+# ServiceMonitor in the demo namespace, so Prometheus labels them namespace="demo".
+# Apply:  kubectl --context kind-cb-dev apply -f hack/lab/demo/avalanche.yaml
+# Flags differ between avalanche releases; check with:
+#   docker run --rm quay.io/prometheuscommunity/avalanche:v0.7.0 --help
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: avalanche
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: avalanche}
+  template:
+    metadata:
+      labels: {app: avalanche}
+    spec:
+      containers:
+        - name: avalanche
+          image: quay.io/prometheuscommunity/avalanche:v0.7.0
+          args:
+            - --gauge-metric-count=20
+            - --series-count=50
+            - --port=9001
+          ports:
+            - {name: http, containerPort: 9001}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: avalanche
+  namespace: demo
+  labels: {app: avalanche}
+spec:
+  selector: {app: avalanche}
+  ports:
+    - {name: http, port: 9001, targetPort: http}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: avalanche
+  namespace: demo
+spec:
+  selector:
+    matchLabels: {app: avalanche}
+  endpoints:
+    - port: http
+      interval: 30s

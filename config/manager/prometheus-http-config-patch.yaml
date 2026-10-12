@@ -1,0 +1,34 @@
+# Optional: give the operator a Prometheus HTTP client config (auth, TLS) from a Secret (ADR 0005).
+# Not enabled by default. To use it, add to config/default/kustomization.yaml:
+#   patches:
+#     - path: ../manager/prometheus-http-config-patch.yaml
+# and create the Secret in the operator namespace, for example:
+#   kubectl create secret generic prometheus-http-config -n cardinality-budget-operator-system \
+#     --from-file=http-config.yaml --from-file=token
+# where http-config.yaml references the mounted file, never an inline secret:
+#   authorization:
+#     type: Bearer
+#     credentials_file: /etc/cardinality-budget-operator/prometheus/token
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+            - --prometheus-url=http://kps-prometheus.monitoring.svc:9090
+            - --prometheus-http-config=/etc/cardinality-budget-operator/prometheus/http-config.yaml
+          volumeMounts:
+            - name: prometheus-http-config
+              mountPath: /etc/cardinality-budget-operator/prometheus
+              readOnly: true
+      volumes:
+        - name: prometheus-http-config
+          secret:
+            secretName: prometheus-http-config
