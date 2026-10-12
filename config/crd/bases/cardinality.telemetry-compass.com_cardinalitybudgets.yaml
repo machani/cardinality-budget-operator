@@ -139,12 +139,26 @@ spec:
                   protectedMetrics:
                     description: |-
                       protectedMetrics are regular expressions for metric names that are never dropped.
-                      Each pattern is fully anchored, like Prometheus (ADR 0012).
+                      Each pattern is fully anchored, like Prometheus (ADR 0012). The rule below compiles every pattern;
+                      an invalid one makes the rule fail, so the API server rejects it. The operator checks again at runtime.
                     items:
+                      maxLength: 256
+                      minLength: 1
                       type: string
+                    maxItems: 64
                     type: array
                     x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: every protectedMetrics entry must be a valid regular
+                        expression (RE2)
+                      rule: self.all(p, ''.matches(p) == ''.matches(p))
                 type: object
+                x-kubernetes-validations:
+                - message: maxMetricsToDrop must be less than or equal to maxTotalDrops
+                  rule: '!has(self.maxMetricsToDrop) || !has(self.maxTotalDrops) ||
+                    self.maxMetricsToDrop <= self.maxTotalDrops'
+                - message: gracePeriod must not be negative
+                  rule: '!has(self.gracePeriod) || duration(self.gracePeriod) >= duration(''0s'')'
               maxActiveSeries:
                 description: 'maxActiveSeries is the budget: the number of active
                   series the namespace may have.'
@@ -350,6 +364,10 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: a CardinalityBudget must be named 'default' (one per namespace,
+            ADR 0004)
+          rule: self.metadata.name == 'default'
     served: true
     storage: true
     subresources:

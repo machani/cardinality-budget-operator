@@ -142,7 +142,7 @@ status:
 
 **Defaults** ([ADR 0014](../adr/0014-spec-defaults.md)): `warnThresholdPercent: 90`, `mode: Observe`, `gracePeriod: 30m`, `maxMetricsToDrop: 1`, `maxTotalDrops: 5`; `maxActiveSeries` is required. The example above uses illustrative values.
 
-**Validation (CEL):** name is `default`; `maxActiveSeries > 0`; `warnThresholdPercent` 1-99; `maxMetricsToDrop` and `maxTotalDrops` 1-10; `maxMetricsToDrop <= maxTotalDrops`; `protectedMetrics` at most 64 items of 1-256 characters, and valid regexes where CEL supports the check. The operator also checks the patterns at runtime ([ADR 0012](../adr/0012-protected-metrics-validation.md)).
+**Validation (CEL):** name is `default`; `maxActiveSeries > 0`; `warnThresholdPercent` 1-99; `maxMetricsToDrop` and `maxTotalDrops` 1-10; `maxMetricsToDrop <= maxTotalDrops`; `protectedMetrics` at most 64 items of 1-256 characters, each a valid regex (checked in CEL; verified on Kubernetes 1.37). The operator also checks the patterns at runtime ([ADR 0012](../adr/0012-protected-metrics-validation.md)).
 
 Printer columns for `kubectl get`: Phase, Series, Limit, Usage %, Mode, Age.
 

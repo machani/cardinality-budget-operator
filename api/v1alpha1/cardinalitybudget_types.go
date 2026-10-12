@@ -64,6 +64,8 @@ type CardinalityBudgetSpec struct {
 }
 
 // EnforcementSpec limits what the operator may drop in Enforce mode.
+// +kubebuilder:validation:XValidation:rule="!has(self.maxMetricsToDrop) || !has(self.maxTotalDrops) || self.maxMetricsToDrop <= self.maxTotalDrops",message="maxMetricsToDrop must be less than or equal to maxTotalDrops"
+// +kubebuilder:validation:XValidation:rule="!has(self.gracePeriod) || duration(self.gracePeriod) >= duration('0s')",message="gracePeriod must not be negative"
 type EnforcementSpec struct {
 	// gracePeriod is how long usage must stay at or above 100% before the first drop.
 	// +kubebuilder:validation:Format=duration
@@ -86,8 +88,13 @@ type EnforcementSpec struct {
 	MaxTotalDrops int32 `json:"maxTotalDrops,omitempty"`
 
 	// protectedMetrics are regular expressions for metric names that are never dropped.
-	// Each pattern is fully anchored, like Prometheus (ADR 0012).
+	// Each pattern is fully anchored, like Prometheus (ADR 0012). The rule below compiles every pattern;
+	// an invalid one makes the rule fail, so the API server rejects it. The operator checks again at runtime.
 	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.all(p, ''.matches(p) == ''.matches(p))",message="every protectedMetrics entry must be a valid regular expression (RE2)"
 	// +optional
 	ProtectedMetrics []string `json:"protectedMetrics,omitempty"`
 
@@ -224,6 +231,7 @@ type CardinalityBudgetStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=cb
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="a CardinalityBudget must be named 'default' (one per namespace, ADR 0004)"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Series",type=integer,JSONPath=`.status.activeSeries`
 // +kubebuilder:printcolumn:name="Limit",type=integer,JSONPath=`.spec.maxActiveSeries`

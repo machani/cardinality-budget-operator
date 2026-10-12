@@ -22,14 +22,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
 )
-
-// testNamespace is the namespace the API tests create budgets in.
-const testNamespace = "default"
 
 // The API server (inside envtest) applies the +kubebuilder:default markers, so these tests check the
 // generated CRD schema, not Go code.
@@ -37,16 +33,12 @@ var _ = Describe("CardinalityBudget API defaults", func() {
 	ctx := context.Background()
 
 	It("fills every default when only maxActiveSeries is set", func() {
-		key := types.NamespacedName{Name: "defaults-test", Namespace: testNamespace}
-		budget := &cardinalityv1alpha1.CardinalityBudget{
-			ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
-			Spec:       cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000},
-		}
+		budget := budgetIn(newTestNamespace(ctx), cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000})
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, budget)).To(Succeed()) })
 
 		got := &cardinalityv1alpha1.CardinalityBudget{}
-		Expect(k8sClient.Get(ctx, key, got)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budgetName, Namespace: budget.Namespace}, got)).To(Succeed())
 
 		Expect(got.Spec.Mode).To(Equal(cardinalityv1alpha1.ModeObserve))
 		Expect(got.Spec.WarnThresholdPercent).To(Equal(int32(90)))
@@ -58,19 +50,20 @@ var _ = Describe("CardinalityBudget API defaults", func() {
 	})
 
 	It("rejects values outside the allowed ranges", func() {
-		for name, spec := range map[string]cardinalityv1alpha1.CardinalityBudgetSpec{
-			"zero-series": {MaxActiveSeries: 0},
-			"warn-100":    {MaxActiveSeries: 1, WarnThresholdPercent: 100},
-			"bad-mode":    {MaxActiveSeries: 1, Mode: "Delete"},
-			"drops-11": {MaxActiveSeries: 1, Enforcement: cardinalityv1alpha1.EnforcementSpec{
-				MaxTotalDrops: 11,
+		// Rejected objects are never stored, so all cases can share one namespace. Each case checks that
+		// the error names the field, so it is rejected for the right reason and not for its name.
+		namespace := newTestNamespace(ctx)
+		for field, spec := range map[string]cardinalityv1alpha1.CardinalityBudgetSpec{
+			"maxActiveSeries":      {MaxActiveSeries: 0},
+			"warnThresholdPercent": {MaxActiveSeries: 1, WarnThresholdPercent: 100},
+			"mode":                 {MaxActiveSeries: 1, Mode: "Delete"},
+			"maxTotalDrops": {MaxActiveSeries: 1, Enforcement: cardinalityv1alpha1.EnforcementSpec{
+				MaxMetricsToDrop: 1, MaxTotalDrops: 11,
 			}},
 		} {
-			budget := &cardinalityv1alpha1.CardinalityBudget{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
-				Spec:       spec,
-			}
-			Expect(k8sClient.Create(ctx, budget)).NotTo(Succeed(), "case %s should be rejected", name)
+			err := k8sClient.Create(ctx, budgetIn(namespace, spec))
+			Expect(err).To(HaveOccurred(), "case %s should be rejected", field)
+			Expect(err.Error()).To(ContainSubstring(field))
 		}
 	})
 })
