@@ -5,6 +5,11 @@ on:
     branches: [dev, main]
   pull_request:
 
+concurrency:
+  # A newer push to the same branch or PR cancels the older, now pointless, run.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
@@ -23,6 +28,14 @@ jobs:
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
+
+      # bin/ holds the tools the Makefile builds or downloads (controller-gen, kustomize, setup-envtest and
+      # the envtest binaries, the custom golangci-lint). Building them takes minutes; cache them.
+      - name: Cache tools in bin/
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bin
+          key: bin-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
 
       - name: Check linter configuration
         run: make lint-config

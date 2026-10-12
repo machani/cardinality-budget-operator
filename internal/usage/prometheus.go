@@ -91,7 +91,8 @@ func NewPrometheusProvider(s Settings) (*PrometheusProvider, error) {
 // Selector returns the series selector for a namespace: the namespace matcher plus the exclusions.
 // Label names that are not valid legacy names are quoted, so Prometheus 3 UTF-8 names work.
 func (p *PrometheusProvider) Selector(namespace string) string {
-	matchers := []string{labels.MustNewMatcher(labels.MatchEqual, p.settings.NamespaceLabel, namespace).String()}
+	matchers := make([]string, 0, 1+len(p.settings.ExcludeMatchers))
+	matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, p.settings.NamespaceLabel, namespace).String())
 	for _, m := range p.settings.ExcludeMatchers {
 		matchers = append(matchers, m.String())
 	}
@@ -159,10 +160,10 @@ func (p *PrometheusProvider) checkReady(ctx context.Context) error {
 		return &InvalidError{Reason: BackendUnreachable, Message: "readiness check failed: " + err.Error()}
 	}
 	_ = resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusOK:
+	switch resp.StatusCode {
+	case http.StatusOK:
 		return nil
-	case resp.StatusCode == http.StatusServiceUnavailable:
+	case http.StatusServiceUnavailable:
 		return &InvalidError{Reason: BackendWarmingUp, Message: "Prometheus reports not ready"}
 	default:
 		return &InvalidError{Reason: BackendUnreachable, Message: fmt.Sprintf("readiness check returned HTTP %d", resp.StatusCode)}
