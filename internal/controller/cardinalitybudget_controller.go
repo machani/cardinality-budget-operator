@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -87,6 +86,7 @@ type CardinalityBudgetReconciler struct {
 // errors are returned as errors; untrustworthy measurements and conflicts are retried on a timer.
 func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues("namespace", req.Namespace, "budget", req.Name)
+	ctx = logf.IntoContext(ctx, log)
 
 	budget := &cardinalityv1alpha1.CardinalityBudget{}
 	if err := r.Get(ctx, req.NamespacedName, budget); err != nil {
@@ -99,7 +99,7 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Step 1: deletion removes every owned rule, then the finalizer.
 	if !budget.DeletionTimestamp.IsZero() {
-		return r.finalize(ctx, log, budget)
+		return r.finalize(ctx, budget)
 	}
 	if !controllerutil.ContainsFinalizer(budget, cardinalityv1alpha1.CleanupFinalizer) {
 		original := budget.DeepCopy()
@@ -201,8 +201,9 @@ func (r *CardinalityBudgetReconciler) resume(budget *cardinalityv1alpha1.Cardina
 
 // finalize removes every owned drop rule from the namespace's monitors, then the finalizer. While the
 // kill switch is on, deletion waits (ADR 0010); the runbook describes manual removal by label.
-func (r *CardinalityBudgetReconciler) finalize(ctx context.Context, log logr.Logger,
+func (r *CardinalityBudgetReconciler) finalize(ctx context.Context,
 	budget *cardinalityv1alpha1.CardinalityBudget) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(budget, cardinalityv1alpha1.CleanupFinalizer) {
 		return ctrl.Result{}, nil
 	}

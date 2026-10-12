@@ -67,8 +67,8 @@ func AppendRule(rules []monitoringv1.RelabelConfig, metric string) []monitoringv
 // AppendRule added), and whether one was found. A missing rule is not an error: cleanup tolerates rules
 // that someone else already removed (ADR 0008). All other rules keep their order.
 func RemoveLastRule(rules []monitoringv1.RelabelConfig, metric string) ([]monitoringv1.RelabelConfig, bool) {
-	for i := len(rules) - 1; i >= 0; i-- {
-		if IsDropRule(rules[i], metric) {
+	for i, rc := range slices.Backward(rules) {
+		if IsDropRule(rc, metric) {
 			return slices.Delete(slices.Clone(rules), i, i+1), true
 		}
 	}

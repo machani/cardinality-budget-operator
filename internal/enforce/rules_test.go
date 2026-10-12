@@ -122,6 +122,9 @@ func TestWithDropAndWithoutDrop(t *testing.T) {
 	if state(t, dropped, "big") != StateOwned {
 		t.Error("after WithDrop the monitor should be Owned")
 	}
+	if state(t, dropped, "other") != StateMissing {
+		t.Error("dropping one metric must not affect another")
+	}
 	if dropped.Object.GetLabels()[cardinalityv1alpha1.EnforcedLabel] != "true" {
 		t.Error("enforced label missing")
 	}
