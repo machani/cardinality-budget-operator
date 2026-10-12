@@ -109,7 +109,7 @@ func (o *Options) Validate() error {
 
 	o.ExcludeMatchers = nil
 	if o.ExcludeSeries != "" {
-		matchers, err := parser.ParseMetricSelector("{" + o.ExcludeSeries + "}")
+		matchers, err := parser.NewParser(parser.Options{}).ParseMetricSelector("{" + o.ExcludeSeries + "}")
 		if err != nil {
 			add("--exclude-series is not a valid list of PromQL label matchers: %w", err)
 		}
