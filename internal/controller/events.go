@@ -62,3 +62,17 @@ func stateEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budg
 	return &budgetEvent{Type: eventType, Reason: "Budget" + string(updated.Phase),
 		Note: fmt.Sprintf("Budget is %s%s", updated.Phase, usage)}
 }
+
+// enforcedEvent returns an Event when the Enforced condition changes to Paused (kill switch) or
+// LimitReached. Drops, restores and pauses already record their own Event where they happen.
+func enforcedEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budgetEvent {
+	before := meta.FindStatusCondition(old.Conditions, cardinalityv1alpha1.ConditionEnforced)
+	after := meta.FindStatusCondition(updated.Conditions, cardinalityv1alpha1.ConditionEnforced)
+	if after == nil || (before != nil && before.Reason == after.Reason) {
+		return nil
+	}
+	if after.Reason != cardinalityv1alpha1.ReasonPaused && after.Reason != cardinalityv1alpha1.ReasonLimitReached {
+		return nil
+	}
+	return &budgetEvent{Type: corev1.EventTypeWarning, Reason: after.Reason, Note: after.Message}
+}

@@ -88,15 +88,48 @@ func NewPrometheusProvider(s Settings) (*PrometheusProvider, error) {
 	}, nil
 }
 
-// Selector returns the series selector for a namespace: the namespace matcher plus the exclusions.
-// Label names that are not valid legacy names are quoted, so Prometheus 3 UTF-8 names work.
-func (p *PrometheusProvider) Selector(namespace string) string {
-	matchers := make([]string, 0, 1+len(p.settings.ExcludeMatchers))
+// Selector returns the series selector for a namespace: the namespace matcher, any extra matchers, then
+// the exclusions. Label names that are not valid legacy names are quoted, so Prometheus 3 UTF-8 names work.
+func (p *PrometheusProvider) Selector(namespace string, extra ...*labels.Matcher) string {
+	matchers := make([]string, 0, 1+len(extra)+len(p.settings.ExcludeMatchers))
 	matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, p.settings.NamespaceLabel, namespace).String())
+	for _, m := range extra {
+		matchers = append(matchers, m.String())
+	}
 	for _, m := range p.settings.ExcludeMatchers {
 		matchers = append(matchers, m.String())
 	}
 	return "{" + strings.Join(matchers, ",") + "}"
+}
+
+// MetricSeriesQuery returns the query for one metric's series in the namespace.
+func (p *PrometheusProvider) MetricSeriesQuery(namespace, metric string) string {
+	return "count(" + p.Selector(namespace, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metric)) + ")"
+}
+
+// MetricSeries returns one metric's series in the namespace; an empty result is 0.
+func (p *PrometheusProvider) MetricSeries(ctx context.Context, namespace, metric string) (int64, error) {
+	vector, err := p.query(ctx, p.MetricSeriesQuery(namespace, metric), p.settings.Now())
+	if err != nil {
+		return 0, err
+	}
+	if len(vector) == 0 {
+		return 0, nil
+	}
+	return int64(vector[0].Value), nil
+}
+
+// ConfigReloadedSince checks runtimeinfo: the last reload succeeded and happened at or after t.
+// Prometheus reports lastConfigTime in whole seconds, so t is truncated to the second first; otherwise a
+// reload in the same second as the change would look older than it (Phase 1 fact 5).
+func (p *PrometheusProvider) ConfigReloadedSince(ctx context.Context, t time.Time) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.settings.QueryTimeout)
+	defer cancel()
+	info, err := p.api.Runtimeinfo(ctx)
+	if err != nil {
+		return false, &InvalidError{Reason: BackendUnreachable, Message: "runtimeinfo failed: " + err.Error()}
+	}
+	return info.ReloadConfigSuccess && !info.LastConfigTime.Before(t.Truncate(time.Second)), nil
 }
 
 // CountQuery and TopQuery are the two usage queries (CLAUDE.md "Reconcile rules" step 3).

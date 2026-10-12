@@ -1,6 +1,6 @@
 # CardinalityBudget Operator — High Level Design
 
-2026-09-25 · Machani Vidyasagar · Updated 2026-10-12 (decisions in [ADR 0001–0015](../adr/README.md))
+2026-09-25 · Machani Vidyasagar · Updated 2026-10-12 (decisions in [ADR 0001–0016](../adr/README.md))
 
 ## Purpose and positioning
 
@@ -125,7 +125,7 @@ status:
 | `protectedMetrics` | Keeps SLO and health metrics safe from drop rules; fully anchored RE2 patterns, an invalid pattern freezes the budget ([ADR 0012](../adr/0012-protected-metrics-validation.md)) |
 | `topMetrics` | Tells the team what to fix; capped to keep the object small in etcd |
 | `plannedDrops` | Dry run: what Enforce would drop next |
-| `enforcedDrops` | Records exactly what the operator changed, one entry per metric; per-monitor detail is in monitor annotations and Events ([ADR 0007](../adr/0007-drop-rule-ownership-and-write-strategy.md)) |
+| `enforcedDrops` | Records exactly what the operator changed, one entry per metric, with `seriesAtDrop` for the effectiveness check; per-monitor detail is in monitor annotations and Events ([ADR 0007](../adr/0007-drop-rule-ownership-and-write-strategy.md), [ADR 0016](../adr/0016-enforcement-details.md)) |
 | `lastEnforcementTime` | Start of the settle period after any apply or restore ([ADR 0006](../adr/0006-enforcement-safety.md)) |
 | `lastResumeToken` | Last resume annotation value acted on ([ADR 0008](../adr/0008-drift-pause-and-resume.md)) |
 
@@ -169,7 +169,7 @@ Each reconcile measures, decides a phase, keeps existing drops correct, acts acc
    - Warn: also `plannedDrops`.
    - Enforce: also add drop rules when all hold: `now - exceededSince > gracePeriod`, settle period over, not paused, kill switch off, under `maxTotalDrops` and the hourly limit. Up to `maxMetricsToDrop` metrics per step, skipping protected metrics and names containing `:`.
    - Leaving Enforce: restore all drops gradually, whatever the usage.
-7. **Restore** when usage is below the warn threshold: one step per settle period, most recent drop first.
+7. **Restore** when usage is below the warn threshold: one step of up to `maxMetricsToDrop` metrics per settle period, most recent drop first ([ADR 0016](../adr/0016-enforcement-details.md)).
 8. **Write status** and conditions through the status subresource; requeue after the smaller of the measurement interval (default 5 minutes) and the time left in the settle period, with small random jitter to spread backend load.
 
 ```mermaid

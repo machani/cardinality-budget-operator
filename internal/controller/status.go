@@ -26,6 +26,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
 	"github.com/machani/cardinality-budget-operator/internal/usage"
@@ -48,7 +49,7 @@ func computeStatus(in statusInput) cardinalityv1alpha1.CardinalityBudgetStatus {
 	st := *budget.Status.DeepCopy()
 	st.ObservedGeneration = budget.Generation
 
-	protected, specErr := compileProtected(budget.Spec.Enforcement.ProtectedMetrics)
+	protected, _, specErr := compileSpec(budget)
 
 	if in.MeasureErr != nil {
 		applyInvalidMeasurement(&st, usage.AsInvalid(in.MeasureErr), in.Now, in.MaxMeasurementAge, budget.Generation)
@@ -180,6 +181,22 @@ func plannedDrops(budget *cardinalityv1alpha1.CardinalityBudget, top []cardinali
 		planned = append(planned, metric.Name)
 	}
 	return planned
+}
+
+// compileSpec checks the parts of the spec CEL cannot fully check and returns them ready to use. Any
+// error is InvalidSpec: the budget freezes (no drops added or removed) until it is fixed (ADR 0012).
+func compileSpec(budget *cardinalityv1alpha1.CardinalityBudget) ([]*regexp.Regexp, labels.Selector, error) {
+	protected, err := compileProtected(budget.Spec.Enforcement.ProtectedMetrics)
+	if err != nil {
+		return nil, nil, err
+	}
+	selector := labels.Everything()
+	if s := budget.Spec.Enforcement.MonitorSelector; s != nil {
+		if selector, err = metav1.LabelSelectorAsSelector(s); err != nil {
+			return nil, nil, fmt.Errorf("monitorSelector is not valid: %w", err)
+		}
+	}
+	return protected, selector, nil
 }
 
 // compileProtected compiles every protectedMetrics pattern, fully anchored like Prometheus (ADR 0012).

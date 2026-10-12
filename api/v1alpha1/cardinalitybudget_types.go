@@ -165,6 +165,11 @@ type EnforcedDrop struct {
 	// state tells whether the drop worked.
 	// +required
 	State DropState `json:"state"`
+
+	// seriesAtDrop is the metric's number of series in the namespace when it was dropped. The
+	// effectiveness check compares against it: Effective when at most 10% remain (ADR 0006, ADR 0016).
+	// +optional
+	SeriesAtDrop int64 `json:"seriesAtDrop,omitempty"`
 }
 
 // CardinalityBudgetStatus defines the observed state of CardinalityBudget.

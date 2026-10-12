@@ -68,6 +68,12 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
+		// The operator watches ServiceMonitors and PodMonitors, so their CRDs must exist (same files as envtest).
+		By("installing the Prometheus Operator CRDs")
+		cmd = exec.Command("kubectl", "apply", "--server-side", "-f", "test/crds/")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to install the Prometheus Operator CRDs")
+
 		By("deploying the controller-manager")
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 		_, err = utils.Run(cmd)

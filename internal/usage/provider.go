@@ -78,4 +78,12 @@ type Provider interface {
 	// Measure returns a valid measurement, or an error (usually *InvalidError) when the result cannot be
 	// trusted. An empty result counts as 0 series only when every validity check passed.
 	Measure(ctx context.Context, namespace string) (Measurement, error)
+
+	// MetricSeries returns one metric's active series in the namespace, after exclusions. It is used by
+	// the effectiveness check right after a valid Measure (ADR 0006).
+	MetricSeries(ctx context.Context, namespace, metric string) (int64, error)
+
+	// ConfigReloadedSince reports whether the backend has successfully loaded its configuration at or
+	// after t, so a monitor change made at t is in effect (ADR 0006 reload check).
+	ConfigReloadedSince(ctx context.Context, t time.Time) (bool, error)
 }
