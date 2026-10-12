@@ -11,7 +11,15 @@ rules:
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/finalizers
+  verbs:
+  - update
 - apiGroups:
   - cardinality.telemetry-compass.com
   resources:
@@ -27,3 +35,13 @@ rules:
   verbs:
   - create
   - patch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - podmonitors
+  - servicemonitors
+  verbs:
+  - get
+  - list
+  - patch
+  - watch

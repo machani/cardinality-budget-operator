@@ -270,6 +270,12 @@ spec:
                         the drop rule.
                       format: int32
                       type: integer
+                    seriesAtDrop:
+                      description: |-
+                        seriesAtDrop is the metric's number of series in the namespace when it was dropped. The
+                        effectiveness check compares against it: Effective when at most 10% remain (ADR 0006, ADR 0016).
+                      format: int64
+                      type: integer
                     since:
                       description: since is when the drop rule was first applied.
                       format: date-time

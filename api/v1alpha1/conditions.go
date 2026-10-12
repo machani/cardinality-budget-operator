@@ -50,3 +50,26 @@ const (
 	// ReasonWithinBudget: BudgetExceeded=False.
 	ReasonWithinBudget = "WithinBudget"
 )
+
+// Enforced condition reasons (ADR 0006, ADR 0008, ADR 0010). Ineffective, ConfigReloadFailed and Reverted
+// pause the budget until the platform resumes it; RateLimited and LimitReached clear on their own; Paused
+// reflects the global kill switch.
+const (
+	// ReasonApplied: Enforced=True, drop rules are in place and enforcement may continue.
+	ReasonApplied = "Applied"
+	// ReasonIneffective: a drop removed less than 90% of its metric's series.
+	ReasonIneffective = "Ineffective"
+	// ReasonLimitReached: over budget, but maxTotalDrops is reached or no candidate is left.
+	ReasonLimitReached = "LimitReached"
+	// ReasonConfigReloadFailed: Prometheus did not reload its config within 5 minutes of a change.
+	ReasonConfigReloadFailed = "ConfigReloadFailed"
+	// ReasonReverted: someone removed an owned drop rule; it is never re-applied.
+	ReasonReverted = "Reverted"
+	// ReasonRateLimited: the global hourly drop limit is reached (v0.3).
+	ReasonRateLimited = "RateLimited"
+	// ReasonPaused: the global kill switch --enforcement-paused is on.
+	ReasonPaused = "Paused"
+)
+
+// PauseReasons are the Enforced reasons that pause a budget until it is resumed (ADR 0008).
+var PauseReasons = []string{ReasonIneffective, ReasonConfigReloadFailed, ReasonReverted}

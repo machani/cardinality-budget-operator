@@ -152,6 +152,48 @@ func TestInvalidMeasurements(t *testing.T) {
 	}
 }
 
+func TestMetricSeries(t *testing.T) {
+	fake := testutil.NewFakePrometheus()
+	defer fake.Close()
+	p := newProvider(t, fake, "namespace")
+	q := p.MetricSeriesQuery(testNamespace, "http.server.duration")
+	if !strings.Contains(q, `__name__="http.server.duration"`) {
+		t.Errorf("query = %s, want a __name__ matcher", q)
+	}
+	fake.SetResult(q, testutil.Sample{Value: 42})
+	if n, err := p.MetricSeries(context.Background(), testNamespace, "http.server.duration"); err != nil || n != 42 {
+		t.Errorf("MetricSeries = %d, %v; want 42", n, err)
+	}
+	if n, err := p.MetricSeries(context.Background(), testNamespace, "gone"); err != nil || n != 0 {
+		t.Errorf("MetricSeries of a dropped metric = %d, %v; want 0", n, err)
+	}
+}
+
+func TestConfigReloadedSince(t *testing.T) {
+	fake := testutil.NewFakePrometheus()
+	defer fake.Close()
+	p := newProvider(t, fake, "namespace")
+	change := time.Date(2026, 10, 12, 13, 41, 20, 600_000_000, time.UTC)
+
+	for _, tc := range []struct {
+		name       string
+		success    bool
+		lastConfig time.Time
+		want       bool
+	}{
+		{"reloaded later", true, change.Add(time.Minute), true},
+		{"reloaded in the same second", true, change, true}, // reported as 13:41:20, change at 13:41:20.6
+		{"not reloaded yet", true, change.Add(-time.Minute), false},
+		{"reload failed", false, change.Add(time.Minute), false},
+	} {
+		fake.SetRuntimeInfo(time.Now().Add(-time.Hour), tc.success, tc.lastConfig)
+		got, err := p.ConfigReloadedSince(context.Background(), change)
+		if err != nil || got != tc.want {
+			t.Errorf("%s: got %v, %v; want %v", tc.name, got, err, tc.want)
+		}
+	}
+}
+
 func TestAsInvalidTreatsUnknownErrorsAsUnreachable(t *testing.T) {
 	if got := AsInvalid(errors.New("boom")); got.Reason != BackendUnreachable {
 		t.Errorf("reason = %s", got.Reason)

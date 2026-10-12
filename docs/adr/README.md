@@ -27,3 +27,4 @@ Rules:
 | [0013](0013-default-series-exclusion.md) | Default series exclusion (refines 0003) | Accepted |
 | [0014](0014-spec-defaults.md) | Spec defaults | Accepted |
 | [0015](0015-events-and-condition-reasons.md) | Events in every mode, condition reasons, and Stale | Accepted |
+| [0016](0016-enforcement-details.md) | Enforcement details: effectiveness baseline, restore step, ownership edge cases | Accepted |
