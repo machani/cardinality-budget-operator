@@ -113,8 +113,9 @@ var _ = Describe("CardinalityBudget reconcile", func() {
 			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
 		}
 
-		reasons := []string{}
-		for _, e := range drainEvents() {
+		recorded := drainEvents()
+		reasons := make([]string, 0, len(recorded))
+		for _, e := range recorded {
 			reasons = append(reasons, strings.Fields(e)[1])
 		}
 		Expect(reasons).To(Equal([]string{"BudgetHealthy", "BudgetWarning", "BudgetExceeded", "BudgetHealthy"}))

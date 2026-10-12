@@ -5,6 +5,11 @@ on:
     branches: [dev, main]
   pull_request:
 
+concurrency:
+  # A newer push to the same branch or PR cancels the older, now pointless, run.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
@@ -24,6 +29,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # bin/ holds the tools the Makefile builds or downloads (controller-gen, kustomize, setup-envtest and
+      # the envtest binaries, the custom golangci-lint). Building them takes minutes; cache them.
+      - name: Cache tools in bin/
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bin
+          key: bin-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
+
       # Pinned to the version used by the lab (ADR 0011: pin tools).
       - name: Install kind v0.33.0
         run: |
@@ -35,4 +48,8 @@ jobs:
         run: kind version
 
       - name: Running Test e2e
+        # The operator has no webhooks, so it needs no cert-manager; skipping it also removes a download
+        # from GitHub that can time out.
+        env:
+          CERT_MANAGER_INSTALL_SKIP: "true"
         run: make test-e2e

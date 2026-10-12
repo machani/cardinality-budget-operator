@@ -67,8 +67,7 @@ func (e *InvalidError) Error() string { return string(e.Reason) + ": " + e.Messa
 // AsInvalid returns the InvalidError in err. Any other error is treated as BackendUnreachable, so an
 // unexpected failure can never be mistaken for a valid measurement.
 func AsInvalid(err error) *InvalidError {
-	var invalid *InvalidError
-	if errors.As(err, &invalid) {
+	if invalid, ok := errors.AsType[*InvalidError](err); ok {
 		return invalid
 	}
 	return &InvalidError{Reason: BackendUnreachable, Message: err.Error()}

@@ -52,6 +52,10 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # Tests repeat literal values (metric names, label names) on purpose: each case reads on its own.
+      - linters:
+          - goconst
+        path: _test\.go
     paths:
       - third_party$
       - builtin$
