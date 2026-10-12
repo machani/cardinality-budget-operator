@@ -97,23 +97,124 @@ type EnforcementSpec struct {
 	MonitorSelector *metav1.LabelSelector `json:"monitorSelector,omitempty"`
 }
 
+// BudgetPhase summarises the budget's state for humans and printer columns.
+// +kubebuilder:validation:Enum=Healthy;Warning;Exceeded;Enforcing;Unknown
+type BudgetPhase string
+
+const (
+	// PhaseHealthy means usage is below the warn threshold.
+	PhaseHealthy BudgetPhase = "Healthy"
+	// PhaseWarning means usage is at or above the warn threshold and below 100%.
+	PhaseWarning BudgetPhase = "Warning"
+	// PhaseExceeded means usage is at or above 100% and nothing is dropped.
+	PhaseExceeded BudgetPhase = "Exceeded"
+	// PhaseEnforcing means drop rules owned by this budget are in place.
+	PhaseEnforcing BudgetPhase = "Enforcing"
+	// PhaseUnknown means the last measurement was not valid or is stale (ADR 0005).
+	PhaseUnknown BudgetPhase = "Unknown"
+)
+
+// DropState is the state of one enforced drop (ADR 0006, ADR 0008).
+// +kubebuilder:validation:Enum=Pending;Effective;Ineffective;Reverted
+type DropState string
+
+const (
+	// DropPending means the rule is applied and the settle period has not ended.
+	DropPending DropState = "Pending"
+	// DropEffective means the metric's series fell by at least 90% after the settle period.
+	DropEffective DropState = "Effective"
+	// DropIneffective means the metric's series fell by less than 90%; the budget is paused.
+	DropIneffective DropState = "Ineffective"
+	// DropReverted means someone removed the rule; it is never re-applied (ADR 0008).
+	DropReverted DropState = "Reverted"
+)
+
+// MetricUsage is the number of active series of one metric in the namespace.
+type MetricUsage struct {
+	// name is the metric name.
+	// +required
+	Name string `json:"name"`
+
+	// series is the number of active series with this name.
+	// +required
+	Series int64 `json:"series"`
+}
+
+// EnforcedDrop records one metric this budget dropped (ADR 0007). Per-monitor detail is in the
+// monitor annotations and in Events.
+type EnforcedDrop struct {
+	// metric is the dropped metric name.
+	// +required
+	Metric string `json:"metric"`
+
+	// monitorCount is the number of monitors that carry the drop rule.
+	// +required
+	MonitorCount int32 `json:"monitorCount"`
+
+	// since is when the drop rule was first applied.
+	// +required
+	Since metav1.Time `json:"since"`
+
+	// state tells whether the drop worked.
+	// +required
+	State DropState `json:"state"`
+}
+
 // CardinalityBudgetStatus defines the observed state of CardinalityBudget.
+// Pointers are used where "not measured yet" must differ from zero.
 type CardinalityBudgetStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// observedGeneration is the spec generation the status was computed from.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// phase summarises the state of the budget.
+	// +optional
+	Phase BudgetPhase `json:"phase,omitempty"`
 
-	// conditions represent the current state of the CardinalityBudget resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// activeSeries is the namespace's number of active series at lastMeasured.
+	// +optional
+	ActiveSeries *int64 `json:"activeSeries,omitempty"`
+
+	// usagePercent is activeSeries as a percentage of maxActiveSeries, rounded down. Can exceed 100.
+	// +optional
+	UsagePercent *int32 `json:"usagePercent,omitempty"`
+
+	// lastMeasured is the time of the last valid measurement.
+	// +optional
+	LastMeasured *metav1.Time `json:"lastMeasured,omitempty"`
+
+	// exceededSince is when usage first reached 100%; cleared when usage falls below.
+	// +optional
+	ExceededSince *metav1.Time `json:"exceededSince,omitempty"`
+
+	// lastEnforcementTime is the start of the settle period after any apply or restore (ADR 0006).
+	// +optional
+	LastEnforcementTime *metav1.Time `json:"lastEnforcementTime,omitempty"`
+
+	// lastResumeToken is the last resume annotation value acted on (ADR 0008).
+	// +optional
+	LastResumeToken string `json:"lastResumeToken,omitempty"`
+
+	// topMetrics are the metrics with the most series in the namespace, largest first.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	TopMetrics []MetricUsage `json:"topMetrics,omitempty"`
+
+	// plannedDrops are the metrics the next enforcement step would drop (Warn and Enforce).
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	PlannedDrops []string `json:"plannedDrops,omitempty"`
+
+	// enforcedDrops are the metrics this budget has dropped, one entry per metric.
+	// +listType=map
+	// +listMapKey=metric
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	EnforcedDrops []EnforcedDrop `json:"enforcedDrops,omitempty"`
+
+	// conditions are Ready, BackendReachable, BudgetExceeded and Enforced (HLD "Conditions").
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -122,6 +223,13 @@ type CardinalityBudgetStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=cb
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Series",type=integer,JSONPath=`.status.activeSeries`
+// +kubebuilder:printcolumn:name="Limit",type=integer,JSONPath=`.spec.maxActiveSeries`
+// +kubebuilder:printcolumn:name="Usage %",type=integer,JSONPath=`.status.usagePercent`
+// +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // CardinalityBudget is the Schema for the cardinalitybudgets API
 type CardinalityBudget struct {
