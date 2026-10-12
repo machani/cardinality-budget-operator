@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	"github.com/machani/cardinality-budget-operator/internal/config"
 	"github.com/machani/cardinality-budget-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -82,6 +83,8 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	var operatorOpts config.Options
+	operatorOpts.BindFlags(flag.CommandLine)
 	opts := zap.Options{
 		Development: true,
 	}
@@ -89,6 +92,21 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Invalid operator settings stop the operator before it touches the cluster (HLD "Operator configuration").
+	if err := operatorOpts.Validate(); err != nil {
+		setupLog.Error(err, "invalid operator configuration")
+		os.Exit(1)
+	}
+	for _, warning := range operatorOpts.Warnings {
+		setupLog.Info("unsafe operator configuration", "warning", warning)
+	}
+	setupLog.Info("operator configuration",
+		"prometheusURL", operatorOpts.PrometheusURL,
+		"namespaceLabel", operatorOpts.NamespaceLabel,
+		"excludeSeries", operatorOpts.ExcludeSeries,
+		"measureInterval", operatorOpts.MeasureInterval,
+		"enforcementPaused", operatorOpts.EnforcementPaused)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
