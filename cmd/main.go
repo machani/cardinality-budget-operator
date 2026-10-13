@@ -197,7 +197,9 @@ func main() {
 		// the manager stops, so would be fine to enable this option. However,
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		// Safe here: main exits as soon as the manager stops. With two replicas (F-0302) this lets the
+		// standby take over in seconds instead of waiting for the lease to expire.
+		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
@@ -228,6 +230,7 @@ func main() {
 		MaxMeasurementAge: operatorOpts.MaxMeasurementAge,
 		SettlePeriod:      operatorOpts.EnforcementSettlePeriod,
 		EnforcementPaused: operatorOpts.EnforcementPaused,
+		MaxDropsPerHour:   operatorOpts.MaxDropsPerHour,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "cardinalitybudget")
 		os.Exit(1)

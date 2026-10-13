@@ -35,6 +35,7 @@ import (
 
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
 	"github.com/machani/cardinality-budget-operator/internal/enforce"
+	"github.com/machani/cardinality-budget-operator/internal/metrics"
 )
 
 // reloadTimeout is how long Prometheus may take to load a changed config before the budget pauses
@@ -69,6 +70,7 @@ type enforcement struct {
 	events        []budgetEvent
 	changed       bool   // a drop or restore happened: a new settle period starts
 	limitReached  bool   // over budget with no room or no candidate
+	rateLimited   bool   // the global hourly drop limit is reached (ADR 0010)
 	newPause      string // pause reason raised in this reconcile
 	pauseMessages map[string]string
 	resync        map[string]bool // adopted drops to extend to every selected monitor
@@ -401,6 +403,18 @@ func (e *enforcement) act(ctx context.Context, settled bool) error {
 		e.limitReached = true
 		return nil
 	}
+	if e.r.MaxDropsPerHour > 0 {
+		recent, err := e.dropsLastHour(ctx)
+		if err != nil {
+			return err
+		}
+		room := e.r.MaxDropsPerHour - recent
+		if room <= 0 {
+			e.rateLimited = true
+			return nil
+		}
+		candidates = candidates[:min(len(candidates), room)]
+	}
 	for _, metric := range candidates {
 		if err := e.drop(ctx, metric); err != nil {
 			return err
@@ -442,6 +456,40 @@ func (e *enforcement) drop(ctx context.Context, metric string) error {
 	e.event(corev1.EventTypeWarning, "Dropped", "Dropped %s (%d series) on %s", metric,
 		seriesOf(metric, e.budget.Status.TopMetrics), strings.Join(applied, ", "))
 	return nil
+}
+
+// dropsLastHour counts drops started in the last hour across all budgets (ADR 0010): every other budget
+// as stored (read without the cache, inside the enforcement mutex) plus this budget as it is now. The
+// count is derived from status, never kept in memory. Extending a drop to a new monitor adds no entry,
+// so it does not count.
+func (e *enforcement) dropsLastHour(ctx context.Context) (int, error) {
+	reader := e.r.APIReader
+	if reader == nil {
+		reader = e.r.Client
+	}
+	budgets := &cardinalityv1alpha1.CardinalityBudgetList{}
+	if err := reader.List(ctx, budgets); err != nil {
+		return 0, fmt.Errorf("listing budgets for the hourly drop limit: %w", err)
+	}
+	since := e.now.Add(-time.Hour)
+	count := func(drops []cardinalityv1alpha1.EnforcedDrop) int {
+		n := 0
+		for _, d := range drops {
+			// metav1.Time has its own Before(*metav1.Time); compare the embedded time.Time instead.
+			if !d.Since.Time.Before(since) {
+				n++
+			}
+		}
+		return n
+	}
+	total := count(e.budget.Status.EnforcedDrops)
+	for i := range budgets.Items {
+		if b := &budgets.Items[i]; b.UID != e.budget.UID {
+			total += count(b.Status.EnforcedDrops)
+		}
+	}
+	metrics.SetDropsLastHour(total)
+	return total, nil
 }
 
 // restoreStep restores up to n active drops, most recent first (LIFO, ADR 0009).
@@ -502,6 +550,10 @@ func (e *enforcement) finishStatus() {
 	case e.r.EnforcementPaused && (spec.Mode == cardinalityv1alpha1.ModeEnforce || len(st.EnforcedDrops) > 0):
 		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1alpha1.ReasonPaused,
 			"monitor writes are blocked by --enforcement-paused", gen)
+	case e.rateLimited:
+		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1alpha1.ReasonRateLimited,
+			fmt.Sprintf("the global limit of %d new drops per hour is reached; this clears as the hour moves on",
+				e.r.MaxDropsPerHour), gen)
 	case e.limitReached:
 		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1alpha1.ReasonLimitReached,
 			fmt.Sprintf("over budget, but no metric can be dropped (maxTotalDrops %d, protected and recording-rule metrics skipped)",

@@ -21,7 +21,8 @@ spec:
     matchLabels:
       control-plane: controller-manager
       app.kubernetes.io/name: cardinality-budget-operator
-  replicas: 1
+  # F-0302: two replicas with leader election; only the leader reconciles.
+  replicas: 2
   template:
     metadata:
       annotations:
@@ -50,6 +51,17 @@ spec:
       #             operator: In
       #             values:
       #               - linux
+      # Prefer replicas on different nodes, so one node failure never takes both down.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    control-plane: controller-manager
+                    app.kubernetes.io/name: cardinality-budget-operator
       securityContext:
         # Projects are configured by default to adhere to the "restricted" Pod Security Standards.
         # This ensures that deployments meet the highest security requirements for Kubernetes.

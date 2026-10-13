@@ -58,8 +58,10 @@ var _ = Describe("Manager", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
 		By("labeling the namespace to enforce the restricted security policy")
+		// metrics=enabled: the NetworkPolicy only lets pods from labelled namespaces reach the metrics port,
+		// and the metrics check below runs its curl pod in this namespace.
 		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
+			"pod-security.kubernetes.io/enforce=restricted", "metrics=enabled")
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
 
@@ -163,18 +165,21 @@ var _ = Describe("Manager", Ordered, func() {
 				podOutput, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
 				podNames := utils.GetNonEmptyLines(podOutput)
-				g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
+				// Two replicas with leader election (F-0302).
+				g.Expect(podNames).To(HaveLen(2), "expected 2 controller pods running")
 				controllerPodName = podNames[0]
 				g.Expect(controllerPodName).To(ContainSubstring("controller-manager"))
 
-				By("validating the pod's status")
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
+				By("validating the pods' status")
+				for _, pod := range podNames {
+					cmd = exec.Command("kubectl", "get",
+						"pods", pod, "-o", "jsonpath={.status.phase}",
+						"-n", namespace,
+					)
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
+				}
 			}
 			Eventually(verifyControllerUp).Should(Succeed())
 		})

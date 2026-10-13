@@ -40,6 +40,20 @@ func TestBudgetSeriesAndDeletion(t *testing.T) {
 	}
 }
 
+func TestPausedSeriesFollowsTheReason(t *testing.T) {
+	const ns = "paused"
+	defer DeleteBudget(ns)
+	SetBudget(ns, BudgetState{Limit: 1, PauseReason: "Reverted"})
+	SetBudget(ns, BudgetState{Limit: 1, PauseReason: "Ineffective"})
+	if n := testutil.CollectAndCount(budgetPaused); n != 1 {
+		t.Errorf("paused series = %d, want 1 (the old reason must be removed)", n)
+	}
+	SetBudget(ns, BudgetState{Limit: 1})
+	if n := testutil.CollectAndCount(budgetPaused); n != 0 {
+		t.Errorf("paused series after resume = %d, want 0", n)
+	}
+}
+
 func TestNoUsageBeforeFirstMeasurement(t *testing.T) {
 	const ns = "new"
 	SetBudget(ns, BudgetState{Limit: 1000})

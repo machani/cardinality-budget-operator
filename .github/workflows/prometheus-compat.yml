@@ -1,0 +1,47 @@
+name: Prometheus compatibility
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  prometheus:
+    permissions:
+      contents: read
+    # F-0306 (ADR 0011): the usage provider against real Prometheus LTS and latest, not only the fake.
+    name: Prometheus ${{ matrix.prometheus }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        prometheus: [v3.13.4, v3.15.0] # LTS and latest, Phase 1 fact 8 (2026-10-13)
+    services:
+      prometheus:
+        image: quay.io/prometheus/prometheus:${{ matrix.prometheus }}
+        ports:
+          - 9090:9090
+        options: >-
+          --health-cmd "wget -qO- http://localhost:9090/-/ready"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run the provider against Prometheus ${{ matrix.prometheus }}
+        env:
+          PROMETHEUS_URL: http://localhost:9090
+        run: go test -tags=promcompat ./internal/usage/ -run TestRealPrometheus -v

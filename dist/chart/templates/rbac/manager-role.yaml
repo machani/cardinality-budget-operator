@@ -1,0 +1,53 @@
+apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.rbac.namespaced }}
+kind: Role
+{{- else }}
+kind: ClusterRole
+{{- end }}
+metadata:
+{{- if .Values.rbac.namespaced }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+  name: {{ include "cardinality-budget-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
+rules:
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - podmonitors
+  - servicemonitors
+  verbs:
+  - get
+  - list
+  - patch
+  - watch

@@ -3,8 +3,8 @@
 A Kubernetes operator that gives each namespace a Prometheus metric-series budget and reports usage on a
 `CardinalityBudget` resource. It never sits in the data path and never drops samples itself.
 
-> **Status: alpha (v0.1).** Observe and Warn modes only: the operator measures, reports and warns. Enforce
-> mode (drop rules on ServiceMonitors/PodMonitors) arrives in v0.2. Run v0.x on lab clusters only.
+> **Status: alpha (v0.3).** Observe, Warn and Enforce modes. Enforce adds drop rules to ServiceMonitors and
+> PodMonitors and deletes data on purpose: run v0.x on lab clusters only. Production readiness is v1.0.
 
 ```console
 $ kubectl get cb -A
@@ -22,6 +22,16 @@ demo        default   Warning   1012     1100    92        Warn   3m
 - Phases: `Healthy`, `Warning` (at `warnThresholdPercent`, default 90%), `Exceeded` (100%), `Unknown`.
 - In `Warn` mode, `status.plannedDrops` shows what Enforce mode would drop. Every mode records an Event
   on each state change (`kubectl describe cb default`).
+- In `Enforce` mode, after `gracePeriod` over budget, the largest allowed metrics are dropped through
+  `metricRelabelings`, one step per settle period, within `maxMetricsToDrop`, `maxTotalDrops` and the global
+  `--max-drops-per-hour`. Protected metrics and recording rules are never dropped; team rules are never touched.
+- Each drop is checked: Prometheus must reload, and at least 90% of the metric's series must disappear.
+  Otherwise, or if someone removes a rule, the budget pauses until the platform team resumes it.
+- Below the warn threshold, or when leaving Enforce, drops are restored newest first. Deleting a budget
+  removes all its rules. `--enforcement-paused` stops every monitor write.
+
+Operations: alerts and dashboard in `config/prometheus` and `config/grafana`, runbooks in
+[docs/runbooks](docs/runbooks/README.md), threat model in [docs/security](docs/security/threat-model.md).
 
 ## Quick start on kind
 
@@ -70,8 +80,12 @@ make docker-build IMG=cardinality-budget-operator:dev && kind load docker-image 
 | `--query-timeout` | `30s` | Timeout per backend request |
 | `--backend-warmup` | `15m` | Minimum Prometheus uptime for a valid measurement |
 | `--max-measurement-age` | 2 x interval | Age after which numbers are `Stale` |
+| `--enforcement-settle-period` | `10m` | Wait between enforcement steps |
+| `--max-drops-per-hour` | `10` | New drops per hour across all budgets |
+| `--enforcement-paused` | `false` | Kill switch: no monitor writes at all |
 
-Enforce mode (v0.2) requires Prometheus `enforcedNamespaceLabel`.
+Enforce mode requires Prometheus `enforcedNamespaceLabel`. The Prometheus namespace needs the label
+`metrics=enabled` to scrape the operator (NetworkPolicy).
 
 ## Documentation
 

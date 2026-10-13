@@ -1,0 +1,84 @@
+# Phase 1 fact 3 (ADR 0003): does enforcedNamespaceLabel stop a team from claiming another namespace's
+# series? A static "exporter" in namespace demo publishes series labelled namespace="victim", scraped with
+# honorLabels: true (the worst case), plus a recording rule in demo that keeps the namespace label.
+# Expected with enforcedNamespaceLabel: namespace: every series and the rule output carry namespace="demo".
+# Apply:   kubectl --context kind-cb-dev apply -f hack/lab/fact3/spoof.yaml
+# Remove:  kubectl --context kind-cb-dev delete -f hack/lab/fact3/spoof.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spoof-metrics
+  namespace: demo
+data:
+  metrics.txt: |
+    # HELP spoof_metric A series that claims another namespace.
+    # TYPE spoof_metric gauge
+    spoof_metric{namespace="victim",id="1"} 1
+    spoof_metric{namespace="victim",id="2"} 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spoof
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: spoof}
+  template:
+    metadata:
+      labels: {app: spoof}
+    spec:
+      containers:
+        - name: httpd
+          image: busybox:1.37
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - {name: http, containerPort: 8080}
+          volumeMounts:
+            - {name: metrics, mountPath: /www}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 32Mi}
+      volumes:
+        - name: metrics
+          configMap: {name: spoof-metrics}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spoof
+  namespace: demo
+  labels: {app: spoof}
+spec:
+  selector: {app: spoof}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: spoof
+  namespace: demo
+spec:
+  selector:
+    matchLabels: {app: spoof}
+  # Prometheus 3 rejects unknown content types; busybox serves .txt as text/plain.
+  fallbackScrapeProtocol: PrometheusText0.0.4
+  endpoints:
+    - port: http
+      path: /metrics.txt
+      interval: 30s
+      honorLabels: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: spoof
+  namespace: demo
+spec:
+  groups:
+    - name: spoof
+      rules:
+        - record: namespace:spoof_metric:sum
+          expr: sum by (namespace) (spoof_metric)

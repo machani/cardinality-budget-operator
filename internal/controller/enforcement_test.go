@@ -437,6 +437,63 @@ var _ = Describe("Enforce mode", func() {
 		Expect(h.monitor("api").Object.(*monitoringv1.ServiceMonitor).Spec.Endpoints[0].MetricRelabelConfigs).To(HaveLen(2))
 	})
 
+	It("restores the excess, newest first, when maxTotalDrops is lowered", func() {
+		h := newHarness(time.Hour)
+		h.dropBig()
+		h.metricSeries("big", 0)
+		h.metricSeries("other", 0)
+		h.clock.Advance(11 * time.Minute)
+		Expect(dropNames(h.reconcile())).To(Equal([]string{"big", "other"}))
+
+		h.patchBudget(func(b *cardinalityv1alpha1.CardinalityBudget) {
+			b.Spec.Enforcement.MaxTotalDrops = 1
+		})
+		h.clock.Advance(11 * time.Minute)
+		b := h.reconcile()
+		Expect(dropNames(b)).To(Equal([]string{"big"}), "the newest drop is restored first; still over budget")
+		Expect(enforcedReason(b)).To(Equal(cardinalityv1alpha1.ReasonApplied))
+	})
+
+	It("does not treat a deleted monitor as drift", func() {
+		h := newHarness(time.Hour)
+		h.serviceMonitor("worker", 1, nil)
+		h.dropBig() // drops on api and worker
+
+		Expect(k8sClient.Delete(h.ctx, h.monitor("worker").Object)).To(Succeed())
+		b := h.reconcile()
+		Expect(b.Status.EnforcedDrops[0].State).To(Equal(cardinalityv1alpha1.DropPending))
+		Expect(b.Status.EnforcedDrops[0].MonitorCount).To(Equal(int32(1)))
+		Expect(enforcedReason(b)).To(Equal(cardinalityv1alpha1.ReasonApplied))
+	})
+
+	It("maps every monitor event to its namespace's budget", func() {
+		sm := &monitoringv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "payments"}}
+		Expect(budgetForMonitor(context.Background(), sm)).To(Equal([]reconcile.Request{
+			{NamespacedName: client.ObjectKey{Namespace: "payments", Name: budgetName}}}))
+	})
+
+	It("applies the global hourly drop limit across budgets", func() {
+		// The clocks run 100 hours ahead, so drops left by other tests (within a few hours of now) are
+		// older than an hour and do not count.
+		first, second := newHarness(100*time.Hour), newHarness(100*time.Hour)
+		first.r.MaxDropsPerHour, second.r.MaxDropsPerHour = 1, 1
+		first.dropBig()
+
+		second.serviceMonitor("api", 1, nil)
+		second.budget(enforceSpec())
+		second.usage(1200, "big", 700)
+		second.reconcile()
+		second.clock.Advance(2 * time.Minute)
+		b := second.reconcile()
+		Expect(b.Status.EnforcedDrops).To(BeEmpty(), "the other budget used the only drop of this hour")
+		Expect(enforcedReason(b)).To(Equal(cardinalityv1alpha1.ReasonRateLimited))
+		Expect(second.eventReasons()).To(ContainElement(cardinalityv1alpha1.ReasonRateLimited))
+
+		second.clock.Advance(61 * time.Minute)
+		b = second.reconcile()
+		Expect(dropNames(b)).To(Equal([]string{"big"}), "the limit clears as the hour moves on")
+	})
+
 	It("adds and removes nothing while the measurement is invalid", func() {
 		h := newHarness(time.Hour)
 		h.dropBig()

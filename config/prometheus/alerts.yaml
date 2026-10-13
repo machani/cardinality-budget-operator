@@ -1,0 +1,76 @@
+# F-0305: alerts for the operator itself (HLD "Production readiness": reconcile errors, backend
+# unreachable, kill switch active, budget paused, config reload failed). Every alert links its runbook.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app.kubernetes.io/name: cardinality-budget-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: alerts
+  namespace: system
+spec:
+  groups:
+    - name: cardinality-budget-operator
+      rules:
+        - alert: CardinalityBudgetOperatorDown
+          expr: absent(up{job="cardinality-budget-operator-controller-manager-metrics-service"} == 1)
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: No CardinalityBudget operator replica is being scraped.
+            description: Budgets are not measured and drops are neither added nor restored.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetoperatordown
+
+        - alert: CardinalityBudgetReconcileErrors
+          expr: sum(rate(controller_runtime_reconcile_errors_total{controller="cardinalitybudget"}[10m])) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: The CardinalityBudget controller keeps failing to reconcile.
+            description: Unexpected API errors for 15 minutes. Expected states (backend down, conflicts) are not errors.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetreconcileerrors
+
+        - alert: CardinalityBudgetMeasurementInvalid
+          expr: cardinalitybudget_measurement_valid == 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "Budget in {{ $labels.budget_namespace }} has no valid measurement."
+            description: Phase is Unknown; nothing is planned, dropped or restored. See the budget's Ready condition for the reason.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetmeasurementinvalid
+
+        - alert: CardinalityBudgetPaused
+          expr: cardinalitybudget_paused == 1
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Budget in {{ $labels.budget_namespace }} is paused ({{ $labels.reason }})."
+            description: No new drops until the platform team resumes it with the resume-enforcement annotation.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetpaused
+
+        - alert: CardinalityBudgetConfigReloadFailed
+          expr: cardinalitybudget_paused{reason="ConfigReloadFailed"} == 1
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "Prometheus did not load its config after a change for {{ $labels.budget_namespace }}."
+            description: Prometheus may be running an old configuration for every team. Check its config reload status now.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetconfigreloadfailed
+
+        - alert: CardinalityBudgetKillSwitchActive
+          expr: max(cardinalitybudget_enforcement_paused) == 1
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: The global kill switch --enforcement-paused is on.
+            description: No monitor is changed, including restores and deletion cleanup. Budgets being deleted wait.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetkillswitchactive
+
+        - alert: CardinalityBudgetRateLimited
+          expr: max(cardinalitybudget_drops_last_hour) >= 10
+          for: 5m
+          labels: {severity: info}
+          annotations:
+            summary: Many drops in the last hour across all budgets.
+            description: At the default --max-drops-per-hour (10) new drops wait. Several namespaces may be exploding at once.
+            runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetratelimited

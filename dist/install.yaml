@@ -1,0 +1,963 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+    control-plane: controller-manager
+  name: cardinality-budget-operator-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: cardinalitybudgets.cardinality.telemetry-compass.com
+spec:
+  group: cardinality.telemetry-compass.com
+  names:
+    kind: CardinalityBudget
+    listKind: CardinalityBudgetList
+    plural: cardinalitybudgets
+    shortNames:
+    - cb
+    singular: cardinalitybudget
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.activeSeries
+      name: Series
+      type: integer
+    - jsonPath: .spec.maxActiveSeries
+      name: Limit
+      type: integer
+    - jsonPath: .status.usagePercent
+      name: Usage %
+      type: integer
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: CardinalityBudget is the Schema for the cardinalitybudgets API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of CardinalityBudget
+            properties:
+              enforcement:
+                default: {}
+                description: |-
+                  enforcement holds the limits that apply in Enforce mode. Defaulted to {} so that its own
+                  defaults apply even when the block is left out.
+                properties:
+                  gracePeriod:
+                    default: 30m
+                    description: gracePeriod is how long usage must stay at or above
+                      100% before the first drop.
+                    format: duration
+                    type: string
+                  maxMetricsToDrop:
+                    default: 1
+                    description: maxMetricsToDrop is the most metrics dropped in one
+                      enforcement step.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  maxTotalDrops:
+                    default: 5
+                    description: maxTotalDrops is the most metrics dropped at the
+                      same time for this budget (ADR 0006).
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  monitorSelector:
+                    description: |-
+                      monitorSelector selects the ServiceMonitors and PodMonitors in the namespace that may receive drop
+                      rules. Empty or unset selects all of them.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  protectedMetrics:
+                    description: |-
+                      protectedMetrics are regular expressions for metric names that are never dropped.
+                      Each pattern is fully anchored, like Prometheus (ADR 0012). The rule below compiles every pattern;
+                      an invalid one makes the rule fail, so the API server rejects it. The operator checks again at runtime.
+                    items:
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: every protectedMetrics entry must be a valid regular
+                        expression (RE2)
+                      rule: self.all(p, ''.matches(p) == ''.matches(p))
+                type: object
+                x-kubernetes-validations:
+                - message: maxMetricsToDrop must be less than or equal to maxTotalDrops
+                  rule: '!has(self.maxMetricsToDrop) || !has(self.maxTotalDrops) ||
+                    self.maxMetricsToDrop <= self.maxTotalDrops'
+                - message: gracePeriod must not be negative
+                  rule: '!has(self.gracePeriod) || duration(self.gracePeriod) >= duration(''0s'')'
+              maxActiveSeries:
+                description: 'maxActiveSeries is the budget: the number of active
+                  series the namespace may have.'
+                format: int64
+                minimum: 1
+                type: integer
+              mode:
+                default: Observe
+                description: mode chooses how far the operator may act. Budgets start
+                  in Observe (ADR 0002).
+                enum:
+                - Observe
+                - Warn
+                - Enforce
+                type: string
+              warnThresholdPercent:
+                default: 90
+                description: warnThresholdPercent is the usage, in percent of maxActiveSeries,
+                  at which the budget enters Warning.
+                format: int32
+                maximum: 99
+                minimum: 1
+                type: integer
+            required:
+            - maxActiveSeries
+            type: object
+          status:
+            description: status defines the observed state of CardinalityBudget
+            properties:
+              activeSeries:
+                description: activeSeries is the namespace's number of active series
+                  at lastMeasured.
+                format: int64
+                type: integer
+              conditions:
+                description: conditions are Ready, BackendReachable, BudgetExceeded
+                  and Enforced (HLD "Conditions").
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              enforcedDrops:
+                description: enforcedDrops are the metrics this budget has dropped,
+                  one entry per metric.
+                items:
+                  description: |-
+                    EnforcedDrop records one metric this budget dropped (ADR 0007). Per-monitor detail is in the
+                    monitor annotations and in Events.
+                  properties:
+                    metric:
+                      description: metric is the dropped metric name.
+                      type: string
+                    monitorCount:
+                      description: monitorCount is the number of monitors that carry
+                        the drop rule.
+                      format: int32
+                      type: integer
+                    seriesAtDrop:
+                      description: |-
+                        seriesAtDrop is the metric's number of series in the namespace when it was dropped. The
+                        effectiveness check compares against it: Effective when at most 10% remain (ADR 0006, ADR 0016).
+                      format: int64
+                      type: integer
+                    since:
+                      description: since is when the drop rule was first applied.
+                      format: date-time
+                      type: string
+                    state:
+                      description: state tells whether the drop worked.
+                      enum:
+                      - Pending
+                      - Effective
+                      - Ineffective
+                      - Reverted
+                      type: string
+                  required:
+                  - metric
+                  - monitorCount
+                  - since
+                  - state
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - metric
+                x-kubernetes-list-type: map
+              exceededSince:
+                description: exceededSince is when usage first reached 100%; cleared
+                  when usage falls below.
+                format: date-time
+                type: string
+              lastEnforcementTime:
+                description: lastEnforcementTime is the start of the settle period
+                  after any apply or restore (ADR 0006).
+                format: date-time
+                type: string
+              lastMeasured:
+                description: lastMeasured is the time of the last valid measurement.
+                format: date-time
+                type: string
+              lastResumeToken:
+                description: lastResumeToken is the last resume annotation value acted
+                  on (ADR 0008).
+                type: string
+              observedGeneration:
+                description: observedGeneration is the spec generation the status
+                  was computed from.
+                format: int64
+                type: integer
+              phase:
+                description: phase summarises the state of the budget.
+                enum:
+                - Healthy
+                - Warning
+                - Exceeded
+                - Enforcing
+                - Unknown
+                type: string
+              plannedDrops:
+                description: plannedDrops are the metrics the next enforcement step
+                  would drop (Warn and Enforce).
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+                x-kubernetes-list-type: atomic
+              topMetrics:
+                description: topMetrics are the metrics with the most series in the
+                  namespace, largest first.
+                items:
+                  description: MetricUsage is the number of active series of one metric
+                    in the namespace.
+                  properties:
+                    name:
+                      description: name is the metric name.
+                      type: string
+                    series:
+                      description: series is the number of active series with this
+                        name.
+                      format: int64
+                      type: integer
+                  required:
+                  - name
+                  - series
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-type: atomic
+              usagePercent:
+                description: usagePercent is activeSeries as a percentage of maxActiveSeries,
+                  rounded down. Can exceed 100.
+                format: int32
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: a CardinalityBudget must be named 'default' (one per namespace,
+            ADR 0004)
+          rule: self.metadata.name == 'default'
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-controller-manager
+  namespace: cardinality-budget-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-leader-election-role
+  namespace: cardinality-budget-operator-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-cardinalitybudget-admin-role
+rules:
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets
+  verbs:
+  - '*'
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-cardinalitybudget-editor-role
+rules:
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-cardinalitybudget-viewer-role
+rules:
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cardinality-budget-operator-manager-role
+rules:
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cardinality.telemetry-compass.com
+  resources:
+  - cardinalitybudgets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - podmonitors
+  - servicemonitors
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cardinality-budget-operator-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cardinality-budget-operator-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-leader-election-rolebinding
+  namespace: cardinality-budget-operator-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cardinality-budget-operator-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: cardinality-budget-operator-controller-manager
+  namespace: cardinality-budget-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cardinality-budget-operator-manager-role
+subjects:
+- kind: ServiceAccount
+  name: cardinality-budget-operator-controller-manager
+  namespace: cardinality-budget-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cardinality-budget-operator-metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cardinality-budget-operator-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: cardinality-budget-operator-controller-manager
+  namespace: cardinality-budget-operator-system
+---
+apiVersion: v1
+data:
+  cardinalitybudget.json: |
+    {
+      "title": "CardinalityBudget",
+      "uid": "cardinalitybudget",
+      "tags": ["cardinality", "prometheus"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "1m",
+      "time": {"from": "now-24h", "to": "now"},
+      "templating": {
+        "list": [
+          {"name": "datasource", "type": "datasource", "query": "prometheus", "label": "Data source"},
+          {
+            "name": "budget_namespace", "type": "query", "label": "Namespace", "multi": true, "includeAll": true,
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
+            "query": "label_values(cardinalitybudget_limit, budget_namespace)", "refresh": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "stat", "title": "Kill switch", "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "max(cardinalitybudget_enforcement_paused)", "refId": "A"}],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Off"}, "1": {"text": "ON", "color": "red"}}}]}}
+        },
+        {
+          "type": "stat", "title": "Budgets paused", "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "count(cardinalitybudget_paused == 1) or vector(0)", "refId": "A"}]
+        },
+        {
+          "type": "stat", "title": "Budgets without a valid measurement", "gridPos": {"x": 8, "y": 0, "w": 5, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "count(cardinalitybudget_measurement_valid == 0) or vector(0)", "refId": "A"}]
+        },
+        {
+          "type": "stat", "title": "Drops in the last hour (all budgets)", "gridPos": {"x": 13, "y": 0, "w": 5, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "max(cardinalitybudget_drops_last_hour)", "refId": "A"}]
+        },
+        {
+          "type": "stat", "title": "Reconcile errors (10m)", "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "sum(increase(controller_runtime_reconcile_errors_total{controller=\"cardinalitybudget\"}[10m]))", "refId": "A"}]
+        },
+        {
+          "type": "timeseries", "title": "Usage (share of budget)", "gridPos": {"x": 0, "y": 4, "w": 12, "h": 9},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "cardinalitybudget_usage_ratio{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}}", "refId": "A"}],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.9}, {"color": "red", "value": 1}]}}}
+        },
+        {
+          "type": "timeseries", "title": "Active series and limit", "gridPos": {"x": 12, "y": 4, "w": 12, "h": 9},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [
+            {"expr": "cardinalitybudget_active_series{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}} series", "refId": "A"},
+            {"expr": "cardinalitybudget_limit{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}} limit", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "Metrics dropped per budget", "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "cardinalitybudget_drops_active{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}}", "refId": "A"}]
+        },
+        {
+          "type": "table", "title": "Paused budgets", "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "cardinalitybudget_paused == 1", "format": "table", "instant": true, "refId": "A"}]
+        }
+      ]
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: cardinality-budget-operator
+    grafana_dashboard: "1"
+  name: cardinality-budget-operator-grafana-dashboard
+  namespace: cardinality-budget-operator-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+    control-plane: controller-manager
+  name: cardinality-budget-operator-controller-manager-metrics-service
+  namespace: cardinality-budget-operator-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app.kubernetes.io/name: cardinality-budget-operator
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+    control-plane: controller-manager
+  name: cardinality-budget-operator-controller-manager
+  namespace: cardinality-budget-operator-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cardinality-budget-operator
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: cardinality-budget-operator
+        control-plane: controller-manager
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: cardinality-budget-operator
+                  control-plane: controller-manager
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - args:
+        - --metrics-bind-address=:8443
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --prometheus-url=http://kps-prometheus.monitoring.svc:9090
+        command:
+        - /manager
+        image: controller:latest
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts: []
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: cardinality-budget-operator-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes: []
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+    control-plane: controller-manager
+  name: cardinality-budget-operator-controller-manager
+  namespace: cardinality-budget-operator-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cardinality-budget-operator
+      control-plane: controller-manager
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-alerts
+  namespace: cardinality-budget-operator-system
+spec:
+  groups:
+  - name: cardinality-budget-operator
+    rules:
+    - alert: CardinalityBudgetOperatorDown
+      annotations:
+        description: Budgets are not measured and drops are neither added nor restored.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetoperatordown
+        summary: No CardinalityBudget operator replica is being scraped.
+      expr: absent(up{job="cardinality-budget-operator-controller-manager-metrics-service"}
+        == 1)
+      for: 10m
+      labels:
+        severity: critical
+    - alert: CardinalityBudgetReconcileErrors
+      annotations:
+        description: Unexpected API errors for 15 minutes. Expected states (backend
+          down, conflicts) are not errors.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetreconcileerrors
+        summary: The CardinalityBudget controller keeps failing to reconcile.
+      expr: sum(rate(controller_runtime_reconcile_errors_total{controller="cardinalitybudget"}[10m]))
+        > 0
+      for: 15m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetMeasurementInvalid
+      annotations:
+        description: Phase is Unknown; nothing is planned, dropped or restored. See
+          the budget's Ready condition for the reason.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetmeasurementinvalid
+        summary: Budget in {{ $labels.budget_namespace }} has no valid measurement.
+      expr: cardinalitybudget_measurement_valid == 0
+      for: 15m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetPaused
+      annotations:
+        description: No new drops until the platform team resumes it with the resume-enforcement
+          annotation.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetpaused
+        summary: Budget in {{ $labels.budget_namespace }} is paused ({{ $labels.reason
+          }}).
+      expr: cardinalitybudget_paused == 1
+      for: 5m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetConfigReloadFailed
+      annotations:
+        description: Prometheus may be running an old configuration for every team.
+          Check its config reload status now.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetconfigreloadfailed
+        summary: Prometheus did not load its config after a change for {{ $labels.budget_namespace
+          }}.
+      expr: cardinalitybudget_paused{reason="ConfigReloadFailed"} == 1
+      for: 1m
+      labels:
+        severity: critical
+    - alert: CardinalityBudgetKillSwitchActive
+      annotations:
+        description: No monitor is changed, including restores and deletion cleanup.
+          Budgets being deleted wait.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetkillswitchactive
+        summary: The global kill switch --enforcement-paused is on.
+      expr: max(cardinalitybudget_enforcement_paused) == 1
+      for: 5m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetRateLimited
+      annotations:
+        description: At the default --max-drops-per-hour (10) new drops wait. Several
+          namespaces may be exploding at once.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetratelimited
+        summary: Many drops in the last hour across all budgets.
+      expr: max(cardinalitybudget_drops_last_hour) >= 10
+      for: 5m
+      labels:
+        severity: info
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+    control-plane: controller-manager
+  name: cardinality-budget-operator-controller-manager-metrics-monitor
+  namespace: cardinality-budget-operator-system
+spec:
+  endpoints:
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cardinality-budget-operator
+      control-plane: controller-manager
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-allow-metrics-traffic
+  namespace: cardinality-budget-operator-system
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          metrics: enabled
+    ports:
+    - port: 8443
+      protocol: TCP
+  - ports:
+    - port: 8081
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cardinality-budget-operator
+      control-plane: controller-manager
+  policyTypes:
+  - Ingress
