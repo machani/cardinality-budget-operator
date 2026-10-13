@@ -16,8 +16,28 @@ jobs:
   test-e2e:
     permissions:
       contents: read
-    name: Run on Ubuntu
+    # F-0306 compatibility matrix (ADR 0011): the three Kubernetes minors under upstream support with the
+    # newest Prometheus Operator, plus the oldest supported Prometheus Operator on the newest Kubernetes.
+    # Node images are the ones published for kind v0.33.0, pinned by digest. Versions recorded as Phase 1
+    # fact 8 (2026-10-13).
+    name: K8s ${{ matrix.kubernetes }}, Prometheus Operator ${{ matrix.prometheus-operator }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kubernetes: "1.37"
+            node-image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+            prometheus-operator: v0.94.1
+          - kubernetes: "1.36"
+            node-image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+            prometheus-operator: v0.94.1
+          - kubernetes: "1.35"
+            node-image: kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
+            prometheus-operator: v0.94.1
+          - kubernetes: "1.37"
+            node-image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+            prometheus-operator: v0.86.2
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -47,9 +67,21 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
+      # test/crds holds the newest supported release; other matrix rows replace it with their version.
+      - name: Use the Prometheus Operator ${{ matrix.prometheus-operator }} CRDs
+        if: matrix.prometheus-operator != 'v0.94.1'
+        env:
+          VERSION: ${{ matrix.prometheus-operator }}
+        run: |
+          for r in servicemonitors podmonitors prometheusrules; do
+            curl -fsSLo "test/crds/monitoring.coreos.com_${r}.yaml" \
+              "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/${VERSION}/example/prometheus-operator-crd/monitoring.coreos.com_${r}.yaml"
+          done
+
       - name: Running Test e2e
         # The operator has no webhooks, so it needs no cert-manager; skipping it also removes a download
         # from GitHub that can time out.
         env:
           CERT_MANAGER_INSTALL_SKIP: "true"
+          KIND_NODE_IMAGE: ${{ matrix.node-image }}
         run: make test-e2e

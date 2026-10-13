@@ -71,7 +71,9 @@ func enforcedEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *b
 	if after == nil || (before != nil && before.Reason == after.Reason) {
 		return nil
 	}
-	if after.Reason != cardinalityv1alpha1.ReasonPaused && after.Reason != cardinalityv1alpha1.ReasonLimitReached {
+	switch after.Reason {
+	case cardinalityv1alpha1.ReasonPaused, cardinalityv1alpha1.ReasonLimitReached, cardinalityv1alpha1.ReasonRateLimited:
+	default:
 		return nil
 	}
 	return &budgetEvent{Type: corev1.EventTypeWarning, Reason: after.Reason, Note: after.Message}

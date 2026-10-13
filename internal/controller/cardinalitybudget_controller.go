@@ -68,6 +68,9 @@ type CardinalityBudgetReconciler struct {
 	SettlePeriod time.Duration
 	// EnforcementPaused is the kill switch (--enforcement-paused): no monitor writes at all.
 	EnforcementPaused bool
+	// MaxDropsPerHour is the global limit on new drops across all budgets (--max-drops-per-hour,
+	// ADR 0010). 0 means no limit; the flag never allows 0, only tests leave it unset.
+	MaxDropsPerHour int
 	// Now returns the current time; nil means time.Now. Tests replace it.
 	Now func() time.Time
 
@@ -175,6 +178,7 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		ActiveSeries: budget.Status.ActiveSeries,
 		DropsActive:  len(activeDrops(budget.Status.EnforcedDrops)),
 		Ready:        readyReason(&budget.Status) == cardinalityv1alpha1.ReasonMeasurementValid,
+		PauseReason:  pauseReasonOf(&budget.Status),
 	})
 	return result, nil
 }
@@ -278,10 +282,7 @@ func (r *CardinalityBudgetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	deleting := predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 		return !e.ObjectNew.GetDeletionTimestamp().IsZero()
 	}}
-	toBudget := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{
-			Namespace: obj.GetNamespace(), Name: cardinalityv1alpha1.BudgetName}}}
-	})
+	toBudget := handler.EnqueueRequestsFromMapFunc(budgetForMonitor)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cardinalityv1alpha1.CardinalityBudget{}, builder.WithPredicates(predicate.Or[client.Object](
 			predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}, deleting))).
@@ -289,6 +290,13 @@ func (r *CardinalityBudgetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&monitoringv1.PodMonitor{}, toBudget).
 		Named("cardinalitybudget").
 		Complete(r)
+}
+
+// budgetForMonitor maps a ServiceMonitor or PodMonitor event to its namespace's budget: there is at most
+// one, always named "default" (ADR 0004). A namespace without a budget costs one cheap NotFound.
+func budgetForMonitor(_ context.Context, monitor client.Object) []reconcile.Request {
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{
+		Namespace: monitor.GetNamespace(), Name: cardinalityv1alpha1.BudgetName}}}
 }
 
 func (r *CardinalityBudgetReconciler) now() time.Time {

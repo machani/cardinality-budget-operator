@@ -1,5 +1,7 @@
-# Allow metrics traffic from pods in namespaces labeled 'metrics: enabled'.
-# Add this label to namespaces whose pods should scrape metrics.
+# F-0303: only pods in namespaces labelled 'metrics: enabled' (for example the monitoring namespace
+# running Prometheus) may reach the operator's authenticated metrics port. The health-probe port stays
+# open so the kubelet's probes work with every network plugin. Everything else is denied.
+#   kubectl label namespace monitoring metrics=enabled
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,11 +18,13 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow pods in namespaces labeled 'metrics: enabled' to scrape metrics.
     - from:
-      - namespaceSelector:
-          matchLabels:
-            metrics: enabled  # Only from namespaces with this label
+        - namespaceSelector:
+            matchLabels:
+              metrics: enabled
       ports:
         - port: 8443
+          protocol: TCP
+    - ports:
+        - port: 8081
           protocol: TCP

@@ -1,0 +1,46 @@
+name: Image
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  image:
+    permissions:
+      contents: read
+    # F-0306: build for both supported platforms (ADR 0011: linux/amd64, linux/arm64) and scan the image.
+    # Nothing is pushed; publishing is the v1.0 release pipeline (F-1002).
+    name: Multi-arch build and scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build linux/amd64 and linux/arm64
+        run: docker buildx build --platform linux/amd64,linux/arm64 -t cardinality-budget-operator:ci .
+
+      - name: Build the amd64 image for scanning
+        run: docker buildx build --platform linux/amd64 --load -t cardinality-budget-operator:scan .
+
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: cardinality-budget-operator:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
