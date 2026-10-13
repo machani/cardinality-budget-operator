@@ -1,0 +1,83 @@
+name: Test Chart
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  test-chart:
+    permissions:
+      contents: read
+    # F-0304: the generated Helm chart installs, upgrades and uninstalls on kind, and uninstalling keeps the
+    # CRD and every budget (crd.keep, helm.sh/resource-policy: keep).
+    name: Install, upgrade, uninstall
+    runs-on: ubuntu-latest
+    env:
+      IMG: controller:latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Cache tools in bin/
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bin
+          key: bin-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
+
+      - name: Install kind v0.33.0
+        run: |
+          curl -fsSLo ./kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Create kind cluster
+        run: kind create cluster
+
+      - name: Build and load the operator image
+        run: |
+          make docker-build
+          kind load docker-image $IMG
+
+      - name: Install the Prometheus Operator CRDs
+        run: kubectl apply --server-side -f test/crds/
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Lint the chart
+        run: helm lint ./dist/chart
+
+      - name: Install
+        run: |
+          make helm-deploy
+          kubectl wait deployment -A -l control-plane=controller-manager --for=condition=Available --timeout=180s
+
+      - name: Upgrade
+        run: |
+          make helm-deploy
+          make helm-history
+
+      - name: Create a budget
+        run: |
+          kubectl create namespace chart-check
+          kubectl -n chart-check apply -f config/samples/cardinality_v1alpha1_cardinalitybudget.yaml
+
+      - name: Uninstall keeps the CRD and the budget
+        run: |
+          make helm-uninstall
+          kubectl get crd cardinalitybudgets.cardinality.telemetry-compass.com
+          kubectl -n chart-check get cardinalitybudget default
