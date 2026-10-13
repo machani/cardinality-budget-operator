@@ -475,7 +475,8 @@ func (e *enforcement) dropsLastHour(ctx context.Context) (int, error) {
 	count := func(drops []cardinalityv1alpha1.EnforcedDrop) int {
 		n := 0
 		for _, d := range drops {
-			if !d.Since.Before(since) {
+			// metav1.Time has its own Before(*metav1.Time); compare the embedded time.Time instead.
+			if !d.Since.Time.Before(since) {
 				n++
 			}
 		}
