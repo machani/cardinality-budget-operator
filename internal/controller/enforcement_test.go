@@ -314,7 +314,13 @@ var _ = Describe("Enforce mode", func() {
 			b.Annotations = map[string]string{cardinalityv1alpha1.ResumeAnnotation: "r1"}
 		})
 		b = h.reconcile()
-		Expect(dropNames(b)).NotTo(ContainElement("big"), "Reverted entries are removed on resume")
+		Expect(dropNames(b)).To(BeEmpty(), "Reverted entries are removed on resume, and no new drop in the same run")
+		Expect(b.Status.LastEnforcementTime.Time).To(BeTemporally("==", h.clock.Now()), "the cleanup is the step")
+
+		h.clock.Advance(5 * time.Minute)
+		Expect(h.reconcile().Status.EnforcedDrops).To(BeEmpty(), "still settling after the cleanup")
+		h.clock.Advance(6 * time.Minute)
+		Expect(h.reconcile().Status.EnforcedDrops).To(HaveLen(1), "next step once settled")
 	})
 
 	It("extends an active drop to a monitor created after it", func() {

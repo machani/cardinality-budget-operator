@@ -36,10 +36,16 @@ Implementing Enforce mode (v0.2) found gaps between the ADRs and what the code m
 4. **Adoption.** An owned metric found in a monitor annotation but missing from `enforcedDrops` is adopted:
    a `Pending` entry is added (baseline from a fresh series count) and the drop is extended to every
    selected monitor. Adoption counts as that run's step: no new drop in the same run, and the settle period
-   starts at adoption (a failover between the monitor write and the status write must not skip it).
+   starts at adoption (a failover between the monitor write and the status write must not skip it). The
+   same holds for every change made before the act step of a run (Reverted cleanup after a resume, an
+   immediate restore of a newly protected metric, cleanup of a deselected monitor): no drop or restore step
+   follows in that run.
 5. **Reverted cleanup.** Resume only lifts the pause. When a budget is not paused, Reverted drops are
    cleaned up: the rules the operator still owns for that metric are removed, then the entry is forgotten.
-   The drop is never re-applied. While paused, nothing about a Reverted drop changes.
+   The drop is never re-applied. While paused, nothing about a Reverted drop changes. After cleanup the
+   metric is an ordinary candidate again: resume means "continue", so a budget still over its limit may
+   drop the same metric one settle period later. To keep it, add it to `protectedMetrics` before resuming
+   (decided 2026-10-15 after the lab run; remembering reverted metrics was rejected as extra state).
 6. **Reload check window.** `ConfigReloadFailed` is raised only while the last change is unverified (inside
    the settle period, or while a drop is `Pending`) and more than 5 minutes have passed without a successful
    reload at or after the change (`lastConfigTime` compared in whole seconds). Outside that window a failed

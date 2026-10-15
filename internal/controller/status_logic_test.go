@@ -18,8 +18,10 @@ package controller
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -253,6 +255,32 @@ func TestStateEvents(t *testing.T) {
 		"Warning/BackendUnreachable", "Normal/BudgetHealthy"}
 	if !slices.Equal(events, want) {
 		t.Errorf("events = %v, want %v", events, want)
+	}
+}
+
+func TestMergeEventsCombinesSameReason(t *testing.T) {
+	got := mergeEvents([]budgetEvent{
+		{Type: "Warning", Reason: "Reverted", Note: "a removed"},
+		{Type: "Warning", Reason: "BudgetExceeded", Note: "over"},
+		{Type: "Warning", Reason: "Reverted", Note: "b removed"},
+		{Type: "Normal", Reason: "Reverted", Note: "other type"},
+	})
+	want := []budgetEvent{
+		{Type: "Warning", Reason: "Reverted", Note: "a removed; b removed"},
+		{Type: "Warning", Reason: "BudgetExceeded", Note: "over"},
+		{Type: "Normal", Reason: "Reverted", Note: "other type"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("mergeEvents = %v, want %v", got, want)
+	}
+}
+
+func TestMergeEventsKeepsNoteWithinLimit(t *testing.T) {
+	long := strings.Repeat("é", maxEventNote) // 2 bytes each
+	got := mergeEvents([]budgetEvent{{Type: "Warning", Reason: "Dropped", Note: long}})[0].Note
+	if len(got) > maxEventNote || !utf8.ValidString(got) || !strings.HasSuffix(got, " …") {
+		t.Errorf("note of %d bytes, valid UTF-8 %v, want at most %d bytes ending in an ellipsis",
+			len(got), utf8.ValidString(got), maxEventNote)
 	}
 }
 
