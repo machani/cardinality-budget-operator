@@ -120,6 +120,12 @@ func (e *enforcement) run(ctx context.Context, selector labels.Selector) (time.D
 	if err := e.adoptUnrecorded(ctx); err != nil {
 		return 0, err
 	}
+	if len(e.resync) > 0 {
+		// An adopted drop was applied moments ago by a run whose status write was lost (for example a
+		// failover between the monitor write and the status write). It counts as this run's step, so the
+		// settle period starts now instead of a new drop following at once (ADR 0006).
+		settled = false
+	}
 	if err := e.cleanDeselected(ctx); err != nil {
 		return 0, err
 	}

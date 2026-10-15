@@ -35,7 +35,8 @@ Implementing Enforce mode (v0.2) found gaps between the ADRs and what the code m
    are no longer removed on restore; the label and Events still identify them.
 4. **Adoption.** An owned metric found in a monitor annotation but missing from `enforcedDrops` is adopted:
    a `Pending` entry is added (baseline from a fresh series count) and the drop is extended to every
-   selected monitor.
+   selected monitor. Adoption counts as that run's step: no new drop in the same run, and the settle period
+   starts at adoption (a failover between the monitor write and the status write must not skip it).
 5. **Reverted cleanup.** Resume only lifts the pause. When a budget is not paused, Reverted drops are
    cleaned up: the rules the operator still owns for that metric are removed, then the entry is forgotten.
    The drop is never re-applied. While paused, nothing about a Reverted drop changes.

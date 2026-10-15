@@ -454,6 +454,36 @@ var _ = Describe("Enforce mode", func() {
 		Expect(enforcedReason(b)).To(Equal(cardinalityv1alpha1.ReasonApplied))
 	})
 
+	It("adopts a drop whose status write was lost and waits a settle period before the next step", func() {
+		h := newHarness(time.Hour)
+		h.dropBig()
+
+		// The leader wrote the rule, then died before its status write: status still shows the previous,
+		// long-settled step and no drop of "big".
+		h.clock.Advance(time.Minute)
+		b := &cardinalityv1alpha1.CardinalityBudget{}
+		Expect(k8sClient.Get(h.ctx, client.ObjectKey{Namespace: h.ns, Name: budgetName}, b)).To(Succeed())
+		original := b.DeepCopy()
+		b.Status.EnforcedDrops = nil
+		b.Status.LastEnforcementTime = &metav1.Time{Time: h.clock.Now().Add(-time.Hour)}
+		Expect(k8sClient.Status().Patch(h.ctx, b, client.MergeFrom(original))).To(Succeed())
+
+		h.metricSeries("big", 700)
+		b = h.reconcile()
+		Expect(dropNames(b)).To(Equal([]string{"big"}), "adopted from the annotation; no second drop in the same run")
+		Expect(b.Status.EnforcedDrops[0].SeriesAtDrop).To(Equal(int64(700)))
+		Expect(b.Status.LastEnforcementTime.Time).To(BeTemporally("==", h.clock.Now()), "the settle period restarts")
+
+		h.clock.Advance(5 * time.Minute)
+		Expect(dropNames(h.reconcile())).To(Equal([]string{"big"}), "still settling")
+
+		h.metricSeries("big", 0)
+		h.clock.Advance(6 * time.Minute)
+		b = h.reconcile()
+		Expect(b.Status.EnforcedDrops[0].State).To(Equal(cardinalityv1alpha1.DropEffective))
+		Expect(dropNames(b)).To(Equal([]string{"big", "other"}), "next step once the adopted drop has settled")
+	})
+
 	It("does not treat a deleted monitor as drift", func() {
 		h := newHarness(time.Hour)
 		h.serviceMonitor("worker", 1, nil)
