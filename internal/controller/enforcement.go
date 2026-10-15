@@ -68,7 +68,7 @@ type enforcement struct {
 	order    []types.UID // stable iteration order
 
 	events        []budgetEvent
-	changed       bool   // a drop or restore happened: a new settle period starts
+	rulesChanged  bool   // a write changed metricRelabelings: Prometheus must reload, a new settle period starts
 	limitReached  bool   // over budget with no room or no candidate
 	rateLimited   bool   // the global hourly drop limit is reached (ADR 0010)
 	newPause      string // pause reason raised in this reconcile
@@ -129,28 +129,42 @@ func (e *enforcement) run(ctx context.Context, selector labels.Selector) (time.D
 	if err := e.checkDriftAndExtend(ctx); err != nil {
 		return 0, err
 	}
-	if e.changed {
-		// A change earlier in this run (an adopted drop whose status write was lost, Reverted cleanup after a
-		// resume, an immediate restore) is this run's step: the settle period starts now instead of a new
-		// drop or restore following at once (ADR 0006, ADR 0016).
+	if e.rulesChanged || e.youngestPendingLeft() > 0 {
+		// A rule change earlier in this run (an immediate restore, rules left over after a resume) is this
+		// run's step, and a Pending drop younger than the settle period (for example one adopted after a lost
+		// status write) is still being checked: no drop or restore follows at once (ADR 0006, ADR 0016).
+		// Changes that touch only annotations or status do not count: Prometheus sees nothing to reload.
 		settled = false
 	}
 	if err := e.act(ctx, settled); err != nil {
 		return 0, err
 	}
 
-	if e.changed {
+	if e.rulesChanged {
 		now := metav1.NewTime(e.now)
 		st.LastEnforcementTime = &now
 	}
 	e.finishStatus()
 
+	left := e.youngestPendingLeft()
 	if st.LastEnforcementTime != nil {
-		if left := st.LastEnforcementTime.Add(e.r.SettlePeriod).Sub(e.now); left > 0 {
-			return left + time.Second, nil
-		}
+		left = max(left, st.LastEnforcementTime.Add(e.r.SettlePeriod).Sub(e.now))
+	}
+	if left > 0 {
+		return left + time.Second, nil
 	}
 	return 0, nil
+}
+
+// youngestPendingLeft is how long until every Pending drop is older than the settle period (0 if none is).
+func (e *enforcement) youngestPendingLeft() time.Duration {
+	var left time.Duration
+	for _, d := range e.budget.Status.EnforcedDrops {
+		if d.State == cardinalityv1alpha1.DropPending {
+			left = max(left, d.Since.Add(e.r.SettlePeriod).Sub(e.now))
+		}
+	}
+	return left
 }
 
 // loadMonitors reads the selected monitors and every monitor carrying the enforced label.
@@ -191,6 +205,9 @@ func (e *enforcement) write(ctx context.Context, uid types.UID, updated enforce.
 			return nil
 		}
 		return fmt.Errorf("writing %s: %w", updated.Key(), err)
+	}
+	if !enforce.SameRules(e.monitors[uid], updated) {
+		e.rulesChanged = true
 	}
 	e.monitors[uid] = updated
 	return nil
@@ -267,7 +284,6 @@ func (e *enforcement) adoptUnrecorded(ctx context.Context) error {
 			}
 			recorded[metric] = true
 			e.resync[metric] = true
-			e.changed = true
 			e.budget.Status.EnforcedDrops = append(e.budget.Status.EnforcedDrops, cardinalityv1alpha1.EnforcedDrop{
 				Metric: metric, Since: metav1.NewTime(e.now), State: cardinalityv1alpha1.DropPending, SeriesAtDrop: series,
 			})
@@ -461,7 +477,6 @@ func (e *enforcement) drop(ctx context.Context, metric string) error {
 		Metric: metric, MonitorCount: e.ownedCount(metric), Since: metav1.NewTime(e.now),
 		State: cardinalityv1alpha1.DropPending, SeriesAtDrop: seriesOf(metric, e.budget.Status.TopMetrics),
 	})
-	e.changed = true
 	e.event(corev1.EventTypeWarning, "Dropped", "Dropped %s (%d series) on %s", metric,
 		seriesOf(metric, e.budget.Status.TopMetrics), strings.Join(applied, ", "))
 	return nil
@@ -530,7 +545,6 @@ func (e *enforcement) restore(ctx context.Context, metric, why string) error {
 	}
 	e.budget.Status.EnforcedDrops = slices.DeleteFunc(e.budget.Status.EnforcedDrops,
 		func(d cardinalityv1alpha1.EnforcedDrop) bool { return d.Metric == metric })
-	e.changed = true
 	e.event(corev1.EventTypeNormal, "Restored", "Restored %s: %s", metric, why)
 	return nil
 }
