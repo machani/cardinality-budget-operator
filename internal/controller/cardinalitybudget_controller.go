@@ -169,7 +169,7 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if e := enforcedEvent(&original.Status, &budget.Status); e != nil {
 		budgetEvents = append(budgetEvents, *e)
 	}
-	for _, e := range budgetEvents {
+	for _, e := range mergeEvents(budgetEvents) {
 		r.Recorder.Eventf(budget, nil, e.Type, e.Reason, eventActionMeasure, "%s", e.Note)
 		log.Info("budget event", "reason", e.Reason, "note", e.Note)
 	}

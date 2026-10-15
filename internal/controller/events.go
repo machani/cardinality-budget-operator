@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"unicode/utf8"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -27,6 +28,9 @@ import (
 
 // eventActionMeasure is the events.k8s.io "action" of every measurement Event.
 const eventActionMeasure = "Measure"
+
+// maxEventNote is the events.k8s.io limit on an Event's note, in bytes.
+const maxEventNote = 1024
 
 // budgetEvent is one Event to record on the budget.
 type budgetEvent struct {
@@ -61,6 +65,40 @@ func stateEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budg
 	}
 	return &budgetEvent{Type: eventType, Reason: "Budget" + string(updated.Phase),
 		Note: fmt.Sprintf("Budget is %s%s", updated.Phase, usage)}
+}
+
+// mergeEvents combines the Events of one reconcile that share type and reason into one Event, in
+// first-seen order. The Events API folds Events with the same reason sent within 6 minutes into a series
+// that keeps only the first note, so five separate Reverted Events would show only the first metric.
+func mergeEvents(in []budgetEvent) []budgetEvent {
+	out := make([]budgetEvent, 0, len(in))
+	index := map[string]int{}
+	for _, e := range in {
+		key := e.Type + "/" + e.Reason
+		if i, ok := index[key]; ok {
+			out[i].Note += "; " + e.Note
+			continue
+		}
+		index[key] = len(out)
+		out = append(out, e)
+	}
+	for i := range out {
+		out[i].Note = truncateNote(out[i].Note)
+	}
+	return out
+}
+
+// truncateNote cuts a note to the API limit on a UTF-8 boundary; status keeps the full record.
+func truncateNote(note string) string {
+	if len(note) <= maxEventNote {
+		return note
+	}
+	const more = " …"
+	cut := maxEventNote - len(more)
+	for cut > 0 && !utf8.RuneStart(note[cut]) {
+		cut--
+	}
+	return note[:cut] + more
 }
 
 // enforcedEvent returns an Event when the Enforced condition changes to Paused (kill switch) or

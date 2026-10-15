@@ -58,8 +58,10 @@ The NetworkPolicy only lets namespaces labelled `metrics=enabled` scrape the ope
 kubectl --context kind-cb-dev label namespace monitoring metrics=enabled --overwrite
 ```
 
-Start clean: no operator deployed, no budget, no rules left on the demo monitor. All three should print
-nothing (or `No resources found`):
+Start clean: no operator deployed, no budget, no rules left on the demo monitor. Expected: `No resources
+found`, then `the server doesn't have a resource type "cb"` (the CRD was removed by `make undeploy`), then at
+most kubectl's own `last-applied-configuration` annotation, with no `metricRelabelings` and no
+`cardinality.telemetry-compass.com/...` annotation:
 
 ```bash
 kubectl --context kind-cb-dev get deployment -n cardinality-budget-operator-system; kubectl --context kind-cb-dev get cb -A; kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o jsonpath='{.spec.endpoints[0].metricRelabelings}{.metadata.annotations}{"\n"}'
@@ -93,8 +95,8 @@ kubectl --context kind-cb-dev -n demo get cb -w
 ## Part 1: F-0307 upgrade test (about 40 min)
 
 Goal: a drop **written by v0.2** survives the upgrade unchanged. The new version adopts it from status and
-monitor annotations without adding, removing or re-applying anything, and judges its effectiveness without
-`seriesAtDrop` (v0.2 did not record it). A drop made by the new build proves nothing here.
+monitor annotations without adding, removing or re-applying anything, and finishes its effectiveness check.
+A drop made by the new build proves nothing here, so check which image wrote it (1d).
 
 1a. Build both images first, so no build runs while drops are timed. The v0.2 build uses a worktree outside
 `/tmp` (which is cleared on reboot); the first build of each is slow:
@@ -118,11 +120,17 @@ cd /opt/cbo-v0.2 && make deploy IMG=cardinality-budget-operator:v0.2 && cd /opt/
 kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"mode":"Enforce","enforcement":{"gracePeriod":"1m"}}}'
 ```
 
-1d. Wait (up to about 12 min: v0.2 measures every 5m, plus the 1m grace period) until a drop appears. It must
-have **no** `seriesAtDrop`, which shows v0.2 wrote it:
+1d. Wait (up to about 12 min: v0.2 measures every 5m, plus the 1m grace period) until a drop appears:
 
 ```bash
 kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='{.status.phase}{"\n"}{.status.enforcedDrops}{"\n"}'
+```
+
+Then confirm v0.2 wrote it: the image must be `cardinality-budget-operator:v0.2`, with pods older than the
+drop's `since` (v0.2 already records `seriesAtDrop`, so that field does not tell the versions apart):
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system get deployment cardinality-budget-operator-controller-manager -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}' && kubectl --context kind-cb-dev -n cardinality-budget-operator-system get pods
 ```
 
 1e. Save the state, only once 1d shows a drop:
@@ -145,7 +153,8 @@ kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='{.status.enfor
 
 Pass:
 
-- the v0.2 drop is still there with the same metric and `since`; its `state` is now `Effective`
+- the v0.2 drop is still there with the same `metric`, `since` and `seriesAtDrop`; its `state` is now
+  `Effective`
 - exactly one rule per dropped metric
 - no `Reverted` Event after the upgrade
 
@@ -166,8 +175,13 @@ Pass: two pods Running, preferably on different nodes.
 
 ## Part 3: Enforce lifecycle, failover, drift, kill switch, restore
 
-3a. More drops. While usage is over 900, one more metric is dropped about every 3 minutes until it is under
-the limit (about 3 drops in total; each is 50 series).
+3a. More drops. After Part 1 usage is usually just under the limit (about 856 of 900 with 3 drops), so nothing
+new is dropped. Lower the limit so it is over again; after the 1m grace period the operator drops one more
+metric (50 series each) every 3 minutes: 856 → 806 → 756, reaching `maxTotalDrops` (5).
+
+```bash
+kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"maxActiveSeries":800}}'
+```
 
 3b. Failover (F-0302). When a new `Dropped` Event appears, kill the leader at once:
 

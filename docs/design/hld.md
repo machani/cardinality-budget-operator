@@ -248,7 +248,7 @@ V1 delivers the complete measure-warn-enforce-undo loop against Prometheus 3.x o
 | Global safety controls | Hourly drop limit and kill switch | Coordinating across objects without in-memory state |
 | Status and conditions | Phase, usage, top metrics, planned and enforced drops; conditions Ready, BackendReachable, BudgetExceeded, Enforced | `metav1.Condition` and observedGeneration |
 | Periodic requeue | Re-measure every 5 minutes by default | `RequeueAfter` for time-driven work |
-| Events | One Event per state change | EventRecorder |
+| Events | One Event per state change; Events of the same reason in one reconcile are combined into one (the Events API folds same-reason Events within 6 minutes into a series showing only the first note); `status` is the full record | EventRecorder |
 | Operator metrics | Per-budget gauges (label `budget_namespace`): series, limit, usage ratio, drops active, measurement valid; cluster gauges such as enforcement paused | controller-runtime metrics registry |
 | Install and demo | Kustomize install; kind cluster with a synthetic high-cardinality app | envtest unit tests plus an end-to-end demo |
 

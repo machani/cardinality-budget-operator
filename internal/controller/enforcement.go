@@ -129,6 +129,12 @@ func (e *enforcement) run(ctx context.Context, selector labels.Selector) (time.D
 	if err := e.checkDriftAndExtend(ctx); err != nil {
 		return 0, err
 	}
+	if e.changed {
+		// A change earlier in this run (an adopted drop whose status write was lost, Reverted cleanup after a
+		// resume, an immediate restore) is this run's step: the settle period starts now instead of a new
+		// drop or restore following at once (ADR 0006, ADR 0016).
+		settled = false
+	}
 	if err := e.act(ctx, settled); err != nil {
 		return 0, err
 	}
@@ -220,6 +226,9 @@ func (e *enforcement) checkEffectiveness(ctx context.Context, reloaded bool) err
 // paused, Reverted drops are left exactly as they are (ADR 0008). Without this, the remaining ownership
 // annotation would be adopted again, re-applying a reverted drop.
 func (e *enforcement) cleanUpReverted(ctx context.Context) error {
+	// After cleanup the metric is a normal candidate again: resume means "continue", so a budget still over
+	// its limit may drop it again one settle period later. To keep a metric, protect it before resuming
+	// (ADR 0016).
 	if e.pauseReason() != "" || e.r.EnforcementPaused {
 		return nil
 	}

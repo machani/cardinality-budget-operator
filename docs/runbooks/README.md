@@ -55,6 +55,10 @@ The `Enforced` reason tells why. A paused budget adds no drops; restores still r
   monitors (Pushgateway, ScrapeConfig, other monitors). Narrow `monitorSelector` or protect the metric, then resume.
 - `ConfigReloadFailed`: see below.
 
+Resume means "continue": Reverted entries are forgotten, and a budget still over its limit may drop the same
+metric again one settle period later. If the rule was removed on purpose (the team needs that metric), add it
+to `protectedMetrics` first, then resume (ADR 0016).
+
 Resume (any new value works once):
 
 ```bash
