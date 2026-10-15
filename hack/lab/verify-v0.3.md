@@ -312,17 +312,32 @@ Use this to stop halfway or after Part 6. It leaves the lab as Part 0 expects: n
 images kept. Order matters: delete the budget **while the operator still runs**, so its finalizer removes the
 drop rules. If the kill switch is on (Part 3e), undo it first; deletion cleanup waits while it is on.
 
-R1. Delete the budget and check the monitor is clean (`grep` prints nothing):
+R1. Delete **every** budget (not only `demo`; an old sample in `default` blocks the CRD deletion in R2), then
+check none is left and the demo monitor is clean (only `check done` is printed):
 
 ```bash
-kubectl --context kind-cb-dev -n demo delete cb default --ignore-not-found --timeout=90s; kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o yaml | grep -E "cardinality|metricRelabelings"; echo "check done"
+kubectl --context kind-cb-dev delete cb --all -A --timeout=90s; kubectl --context kind-cb-dev get cb -A --no-headers; kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o yaml | grep -E "cardinality|metricRelabelings"; echo "check done"
 ```
 
-If the delete times out because no operator is running, remove the finalizer by hand and reset the monitor
-from its manifest (lab only; `replace` drops our annotation, label and rules):
+Do not run R2 while any budget is listed: without the operator nobody removes its finalizer, the CRD deletion
+waits forever and `make undeploy` hangs.
+
+If a delete times out because no operator is running, first list the monitors in that namespace that still
+carry our rules (replace `<ns>`):
 
 ```bash
-kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"metadata":{"finalizers":null}}' && kubectl --context kind-cb-dev replace -f hack/lab/demo/avalanche.yaml
+kubectl --context kind-cb-dev -n <ns> get servicemonitors,podmonitors -l cardinality.telemetry-compass.com/enforced=true -o name
+```
+
+If that prints nothing, remove the finalizer by hand. For `demo`, also reset the monitor from its manifest
+(lab only; `replace` drops our annotation, label and rules):
+
+```bash
+kubectl --context kind-cb-dev -n <ns> patch cb default --type=merge -p '{"metadata":{"finalizers":null}}'
+```
+
+```bash
+kubectl --context kind-cb-dev replace -f hack/lab/demo/avalanche.yaml
 ```
 
 R2. Remove the operator (Deployment, RBAC, NetworkPolicy, alerts, CRD):
