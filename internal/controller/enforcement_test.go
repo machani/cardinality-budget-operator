@@ -315,12 +315,44 @@ var _ = Describe("Enforce mode", func() {
 		})
 		b = h.reconcile()
 		Expect(dropNames(b)).To(BeEmpty(), "Reverted entries are removed on resume, and no new drop in the same run")
-		Expect(b.Status.LastEnforcementTime.Time).To(BeTemporally("==", h.clock.Now()), "the cleanup is the step")
+		Expect(enforce.HasRule(h.monitor("api").Object.(*monitoringv1.ServiceMonitor).Spec.Endpoints[1].MetricRelabelConfigs, "big")).
+			To(BeFalse(), "the leftover rule on the second endpoint is removed")
+		Expect(b.Status.LastEnforcementTime.Time).To(BeTemporally("==", h.clock.Now()),
+			"removing the leftover rule changes Prometheus's config: that is the step")
 
 		h.clock.Advance(5 * time.Minute)
 		Expect(h.reconcile().Status.EnforcedDrops).To(BeEmpty(), "still settling after the cleanup")
 		h.clock.Advance(6 * time.Minute)
 		Expect(h.reconcile().Status.EnforcedDrops).To(HaveLen(1), "next step once settled")
+	})
+
+	It("is not held up after a resume whose cleanup changes only the annotation", func() {
+		h := newHarness(time.Hour)
+		h.dropBig()
+		dropped := h.clock.Now()
+
+		// Someone removes every rule by hand; Prometheus reloads for that change and then never again.
+		sm := h.monitor("api").Object.(*monitoringv1.ServiceMonitor)
+		for i := range sm.Spec.Endpoints {
+			sm.Spec.Endpoints[i].MetricRelabelConfigs, _ = enforce.RemoveLastRule(sm.Spec.Endpoints[i].MetricRelabelConfigs, "big")
+		}
+		Expect(k8sClient.Update(h.ctx, sm)).To(Succeed())
+		h.fake.SetRuntimeInfo(h.clock.Now().Add(-2*time.Hour), true, dropped)
+		Expect(h.reconcile().Status.EnforcedDrops[0].State).To(Equal(cardinalityv1alpha1.DropReverted))
+
+		h.clock.Advance(30 * time.Second)
+		h.patchBudget(func(b *cardinalityv1alpha1.CardinalityBudget) {
+			b.Annotations = map[string]string{cardinalityv1alpha1.ResumeAnnotation: "r1"}
+		})
+		b := h.reconcile()
+		Expect(dropNames(b)).To(BeEmpty())
+		Expect(h.monitor("api").Object.GetAnnotations()).NotTo(HaveKey(cardinalityv1alpha1.DroppedMetricsAnnotation))
+		Expect(b.Status.LastEnforcementTime.Time).To(BeTemporally("==", dropped),
+			"an annotation-only cleanup gives Prometheus nothing to reload, so it is not a step")
+
+		h.clock.Advance(10 * time.Minute)
+		Expect(h.reconcile().Status.EnforcedDrops).To(HaveLen(1),
+			"once the last drop has settled, the next step runs without waiting for a reload that never comes")
 	})
 
 	It("extends an active drop to a monitor created after it", func() {
@@ -478,10 +510,10 @@ var _ = Describe("Enforce mode", func() {
 		b = h.reconcile()
 		Expect(dropNames(b)).To(Equal([]string{"big"}), "adopted from the annotation; no second drop in the same run")
 		Expect(b.Status.EnforcedDrops[0].SeriesAtDrop).To(Equal(int64(700)))
-		Expect(b.Status.LastEnforcementTime.Time).To(BeTemporally("==", h.clock.Now()), "the settle period restarts")
+		Expect(b.Status.EnforcedDrops[0].Since.Time).To(BeTemporally("==", h.clock.Now()))
 
 		h.clock.Advance(5 * time.Minute)
-		Expect(dropNames(h.reconcile())).To(Equal([]string{"big"}), "still settling")
+		Expect(dropNames(h.reconcile())).To(Equal([]string{"big"}), "the adopted drop is younger than the settle period")
 
 		h.metricSeries("big", 0)
 		h.clock.Advance(6 * time.Minute)
