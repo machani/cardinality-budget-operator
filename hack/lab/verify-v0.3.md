@@ -21,6 +21,197 @@ Expected noise, not a failure:
   replicas race for the lease; one wins, the other retries.
 - Both pods on `cb-dev-worker`: kind's control-plane node is tainted, and anti-affinity is only preferred.
 
+Run state: Parts 1, 2, 3a-3d passed on 2026-10-15 (the resume found the bugs fixed in PR #19 and #20). The
+remaining checks run as the "Final run" below, on a build that includes PR #20. Its steps repeat drift and
+resume once to confirm the fix in the cluster.
+
+## Final run (remaining checks, about 2 hours)
+
+Every step is one command block; run them in order. "Pass" says what must hold before the next step.
+
+F0. Start the lab and get the code. If `git status` shows `config/manager/kustomization.yaml` as modified,
+that is the image tag `make deploy` writes; reset it:
+
+```bash
+cd /opt/cardinality-budget-operator && export KUBECONFIG=/root/.kube/kind-cb-dev.yaml && git checkout -- config/manager/kustomization.yaml && git checkout dev && git pull && git log --oneline -1 && df -h /
+```
+
+Pass: the top commit is the merge of PR #20 or later; at least 10 GB free.
+
+```bash
+docker start cb-dev-control-plane cb-dev-worker && kubectl --context kind-cb-dev wait node --all --for=condition=Ready --timeout=300s && kubectl --context kind-cb-dev label namespace monitoring metrics=enabled --overwrite
+```
+
+Second terminal (keep open):
+
+```bash
+kubectl --context kind-cb-dev -n monitoring port-forward svc/kps-prometheus 9090:9090
+```
+
+Prometheus restarts with kind and needs 15 minutes of warm-up before measurements are valid. Note its start
+time; F1 and F2 fit into the wait:
+
+```bash
+curl -s localhost:9090/api/v1/status/runtimeinfo | jq -r .data.startTime; date -u
+```
+
+F1. Build and deploy the fixed operator, then switch to short timings (1m measure, 3m settle):
+
+```bash
+make docker-build IMG=cardinality-budget-operator:dev && kind load docker-image cardinality-budget-operator:dev --name cb-dev && make deploy IMG=cardinality-budget-operator:dev
+```
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system patch deployment cardinality-budget-operator-controller-manager --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--measure-interval=1m"},{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enforcement-settle-period=3m"}]' && kubectl --context kind-cb-dev -n cardinality-budget-operator-system rollout status deployment cardinality-budget-operator-controller-manager && kubectl --context kind-cb-dev -n cardinality-budget-operator-system get pods
+```
+
+Pass: two pods Running.
+
+F2. Demo workload and budget (limit 900, Enforce, grace 1m):
+
+```bash
+kubectl --context kind-cb-dev apply -f hack/lab/demo/avalanche.yaml -f hack/lab/demo/budget.yaml && kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"mode":"Enforce","enforcement":{"gracePeriod":"1m"}}}'
+```
+
+Third terminal (keep open):
+
+```bash
+kubectl --context kind-cb-dev -n demo get events --field-selector involvedObject.name=default -w
+```
+
+Status at any time:
+
+```bash
+kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='{.spec.maxActiveSeries} {.status.usagePercent}% {.status.phase} last={.status.lastEnforcementTime}{"\n"}{range .status.conditions[*]}{.type}={.reason} {end}{"\n"}{range .status.enforcedDrops[*]}{.metric} {.since} {.state}{"\n"}{end}'
+```
+
+F3. Wait for drops. While Prometheus warms up the budget is `Unknown/BackendWarmingUp`. About 2 minutes
+after the warm-up ends, the first `Dropped` Event arrives, then one every 3 minutes: 1006 → 956 → 906 → 856,
+3 drops in total.
+
+Pass: 3 drops 3 minutes apart, then the phase stays `Enforcing` under 900 (95%).
+
+F4. Drift and resume on the fixed build (F-0211, ADR 0016). Remove every rule by hand:
+
+```bash
+kubectl --context kind-cb-dev -n demo patch servicemonitor avalanche --type=json -p '[{"op":"remove","path":"/spec/endpoints/0/metricRelabelings"}]'
+```
+
+Pass: within a minute **one** `Reverted` Event naming all 3 metrics; all entries `Reverted`; nothing
+re-applied; the series come back (usage 111%). Note `last=` from the status command, then resume:
+
+```bash
+kubectl --context kind-cb-dev -n demo annotate cb default --overwrite cardinality.telemetry-compass.com/resume-enforcement=final1
+```
+
+Pass:
+
+- one `Resumed` and one `Restored` Event (naming all 3); no `Dropped` in the same second
+- `last=` is **unchanged** (the cleanup changed only the annotation, so it is not a step)
+- the next `Dropped` arrives by itself within about 2 minutes, with no reload trick; then one every 3 minutes
+
+F5. Kill switch (F-0203), alert `CardinalityBudgetKillSwitchActive`. Wait until F4 has dropped at least one
+metric again, then:
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system patch deployment cardinality-budget-operator-controller-manager --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enforcement-paused"}]'
+```
+
+After about 7 minutes:
+
+```bash
+kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='{.status.conditions[?(@.type=="Enforced")].reason}{"\n"}' && kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o jsonpath='{.spec.endpoints[0].metricRelabelings[*].regex}{"\n"}' && curl -s localhost:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"'
+```
+
+Pass: `Paused`; the same rules as before the switch; `CardinalityBudgetKillSwitchActive firing`. Turn it
+off (back to the F1 short timings) and wait for the rollout:
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system rollout undo deployment cardinality-budget-operator-controller-manager && kubectl --context kind-cb-dev -n cardinality-budget-operator-system rollout status deployment cardinality-budget-operator-controller-manager
+```
+
+Pass: `Enforced` back to `Applied`; drops continue while over budget.
+
+F6. Restore (F-0209). Raise the limit so usage is below the 90% warn threshold:
+
+```bash
+kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"maxActiveSeries":1300}}'
+```
+
+Pass: one `Restored` Event about every 3 minutes, newest first, until no drops are left and the phase is
+`Healthy`. Then only `check done` is printed:
+
+```bash
+kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o yaml | grep -E "cardinality|metricRelabelings"; echo "check done"
+```
+
+F7. Alert `CardinalityBudgetMeasurementInvalid` and no writes on an invalid measurement (ADR 0005). Lower
+the limit and wait for one `Dropped` Event:
+
+```bash
+kubectl --context kind-cb-dev -n demo patch cb default --type=merge -p '{"spec":{"maxActiveSeries":900}}'
+```
+
+Point the operator at a Prometheus that does not exist (the last `--prometheus-url` wins):
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system patch deployment cardinality-budget-operator-controller-manager --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--prometheus-url=http://nowhere.monitoring.svc:9090"}]'
+```
+
+After about 17 minutes:
+
+```bash
+kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='{.status.phase} {.status.conditions[?(@.type=="Ready")].reason}{"\n"}' && kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o jsonpath='{.spec.endpoints[0].metricRelabelings[*].regex}{"\n"}' && curl -s localhost:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"'
+```
+
+Pass: `Unknown BackendUnreachable`; the drop rule is still there; `CardinalityBudgetMeasurementInvalid
+firing`. Undo:
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system rollout undo deployment cardinality-budget-operator-controller-manager && kubectl --context kind-cb-dev -n cardinality-budget-operator-system rollout status deployment cardinality-budget-operator-controller-manager
+```
+
+F8. Alert `CardinalityBudgetOperatorDown`:
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system scale deployment cardinality-budget-operator-controller-manager --replicas=0
+```
+
+After about 12 minutes, the alerts `curl` from F7 shows `CardinalityBudgetOperatorDown firing`. Start it again
+and check all 7 rules are loaded:
+
+```bash
+kubectl --context kind-cb-dev -n cardinality-budget-operator-system scale deployment cardinality-budget-operator-controller-manager --replicas=2 && curl -s localhost:9090/api/v1/rules | jq -r '.data.groups[] | select(.name=="cardinality-budget-operator") | .rules[].name'
+```
+
+F9. Deletion cleanup (F-0204). With at least one drop active:
+
+```bash
+kubectl --context kind-cb-dev -n demo delete cb default && kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o yaml | grep -E "cardinality|metricRelabelings"; echo "check done"
+```
+
+Pass: the delete finishes within seconds; only `check done` is printed.
+
+F10. Fact 3, namespace-label spoofing (ADR 0003):
+
+```bash
+kubectl --context kind-cb-dev apply -f hack/lab/fact3/spoof.yaml
+```
+
+After 2 minutes:
+
+```bash
+for q in spoof_metric 'namespace:spoof_metric:sum'; do curl -s localhost:9090/api/v1/query --data-urlencode "query=$q" | jq -c '.data.result[].metric'; done
+```
+
+Pass: every line shows `"namespace":"demo"` and none `"victim"`. Remove it:
+
+```bash
+kubectl --context kind-cb-dev delete -f hack/lab/fact3/spoof.yaml
+```
+
+F11. Reset: run "Stop and reset" at the end of this file.
+
 ## Prerequisites (once per box)
 
 - Docker with BuildKit. The legacy builder ignores the `!**/*.go` re-includes in `.dockerignore` and fails
