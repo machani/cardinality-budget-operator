@@ -106,9 +106,10 @@ kubectl --context kind-cb-dev -n demo annotate cb default --overwrite cardinalit
 
 Pass:
 
-- one `Resumed` and one `Restored` Event (naming all 3); no `Dropped` in the same second
-- `last=` is **unchanged** (the cleanup changed only the annotation, so it is not a step)
-- the next `Dropped` arrives by itself within about 2 minutes, with no reload trick; then one every 3 minutes
+- one `Resumed` and one `Restored` Event (naming all 3)
+- the cleanup does not move `last=` (it changed only the annotation, so it is not a step). If the last drop
+  has already settled, the next drop may follow in the same run; `last=` then moves to that drop's `since`
+- the next `Dropped` arrives by itself, with no reload trick, then one every 3 minutes
 
 F5. Kill switch (F-0203), alert `CardinalityBudgetKillSwitchActive`. Wait until F4 has dropped at least one
 metric again, then:

@@ -227,8 +227,8 @@ checks tidy modules, generated files and license headers. After changing `api/` 
 ## Roadmap
 
 - **v0.1** Observe and Warn: done
-- **v0.2** Enforce: merged, lab verification in progress
-- **v0.3** Hardening (HA, security, rate limit, Helm, CI matrix): merged, lab verification in progress
+- **v0.2** Enforce: done
+- **v0.3** Hardening (HA, security, rate limit, Helm, CI matrix): done (scale tests pending)
 - **v1.0** API `v1beta1` with conversion webhook, signed releases with SBOM, full documentation, production
   readiness review
 

@@ -1,6 +1,6 @@
 # CardinalityBudget capabilities
 
-Status as of 2026-10-14. Build tracker with feature IDs: [docs/features](../features/README.md).
+Status as of 2026-10-19. Build tracker with feature IDs: [docs/features](../features/README.md).
 
 ## Modes
 
