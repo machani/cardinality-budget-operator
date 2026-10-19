@@ -74,6 +74,10 @@ Fix the cause, then set the resume annotation to a new value:
 No. It treats that as a deliberate decision, marks the drop `Reverted` and pauses. It never re-applies a
 reverted drop.
 
+**After a resume, can the same metric be dropped again?**
+Yes. Resume means "continue": if the budget is still over its limit, the operator may pick the same metric
+again one settle period later. If the team needs that metric, add it to `protectedMetrics` before resuming.
+
 **Can enforcement run away across many namespaces?**
 `--max-drops-per-hour` (10) limits new drops across all budgets together. Beyond that, drops wait
 (`RateLimited`).
