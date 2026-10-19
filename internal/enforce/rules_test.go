@@ -147,6 +147,31 @@ func TestWithDropAndWithoutDrop(t *testing.T) {
 	}
 }
 
+func TestSameRulesIgnoresAnnotationOnlyChanges(t *testing.T) {
+	m := serviceMonitor(2, nil)
+	dropped, err := m.WithDrop("big")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if SameRules(m, dropped) {
+		t.Error("adding a drop rule changes the rules")
+	}
+
+	// The rules were removed by hand; only our annotation and label are left to clean up.
+	handEdited := Monitor{Object: dropped.Object.DeepCopyObject().(*monitoringv1.ServiceMonitor)}
+	for i := range handEdited.Object.(*monitoringv1.ServiceMonitor).Spec.Endpoints {
+		ep := &handEdited.Object.(*monitoringv1.ServiceMonitor).Spec.Endpoints[i]
+		ep.MetricRelabelConfigs, _ = RemoveLastRule(ep.MetricRelabelConfigs, "big")
+	}
+	cleaned, changed, err := handEdited.WithoutDrop("big")
+	if err != nil || !changed {
+		t.Fatalf("WithoutDrop: changed=%v err=%v", changed, err)
+	}
+	if !SameRules(handEdited, cleaned) {
+		t.Error("removing only the annotation must not count as a rule change")
+	}
+}
+
 func TestTeamRuleIsNeverOwnedOrRemoved(t *testing.T) {
 	m := serviceMonitor(1, nil)
 	sm := m.Object.(*monitoringv1.ServiceMonitor)

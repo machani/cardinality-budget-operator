@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
@@ -157,6 +158,21 @@ func (m Monitor) WithoutDrop(metric string) (Monitor, bool, error) {
 	}
 	setOwned(updated.Object, slices.DeleteFunc(slices.Clone(owned), func(s string) bool { return s == metric }))
 	return updated, true, nil
+}
+
+// SameRules reports whether both copies have the same metricRelabelings on every endpoint. A write that
+// changes only the annotation or label leaves Prometheus's configuration as it was.
+func SameRules(a, b Monitor) bool {
+	la, lb := a.relabelLists(), b.relabelLists()
+	if len(la) != len(lb) {
+		return false
+	}
+	for i := range la {
+		if !equality.Semantic.DeepEqual(*la[i], *lb[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // setOwned writes the ownership annotation and label in the same object, so they change in the same

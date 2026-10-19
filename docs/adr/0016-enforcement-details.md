@@ -35,11 +35,15 @@ Implementing Enforce mode (v0.2) found gaps between the ADRs and what the code m
    are no longer removed on restore; the label and Events still identify them.
 4. **Adoption.** An owned metric found in a monitor annotation but missing from `enforcedDrops` is adopted:
    a `Pending` entry is added (baseline from a fresh series count) and the drop is extended to every
-   selected monitor. Adoption counts as that run's step: no new drop in the same run, and the settle period
-   starts at adoption (a failover between the monitor write and the status write must not skip it). The
-   same holds for every change made before the act step of a run (Reverted cleanup after a resume, an
-   immediate restore of a newly protected metric, cleanup of a deselected monitor): no drop or restore step
-   follows in that run.
+   selected monitor. A `Pending` drop younger than the settle period, adopted or not, blocks the next drop
+   or restore step, so a failover between the monitor write and the status write cannot skip the settle
+   period. Adoption does not move `lastEnforcementTime`: the rule was written earlier, and Prometheus may
+   already have reloaded for it.
+   A run whose writes change `metricRelabelings` (an immediate restore of a newly protected metric, rules
+   left over after a resume, cleanup of a deselected monitor, extension to a new monitor) is a step: `lastEnforcementTime` moves and no
+   drop or restore step follows in that run. A write that changes only the annotation or label (for example
+   cleanup after someone removed every rule by hand) is not a step: Prometheus has nothing to reload, and
+   waiting for a reload after it would block enforcement forever (found in the lab, 2026-10-15).
 5. **Reverted cleanup.** Resume only lifts the pause. When a budget is not paused, Reverted drops are
    cleaned up: the rules the operator still owns for that metric are removed, then the entry is forgotten.
    The drop is never re-applied. While paused, nothing about a Reverted drop changes. After cleanup the
