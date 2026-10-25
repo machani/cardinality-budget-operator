@@ -26,57 +26,76 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that changes only documentation skips the steps below; the job still reports
+      # success, so the required checks pass without a full run (hack/ci/docs-only.sh).
+      - name: Detect a docs-only change
+        id: changes
+        run: bash hack/ci/docs-only.sh
 
       - name: Setup Go
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Cache tools in bin/
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bin
           key: bin-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
 
       - name: Install kind v0.33.0
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           curl -fsSLo ./kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-$(go env GOARCH)
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
       - name: Create kind cluster
+        if: steps.changes.outputs.docs_only != 'true'
         run: kind create cluster
 
       - name: Build and load the operator image
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           make docker-build
           kind load docker-image $IMG
 
       - name: Install the Prometheus Operator CRDs
+        if: steps.changes.outputs.docs_only != 'true'
         run: kubectl apply --server-side -f test/crds/
 
       - name: Install Helm
+        if: steps.changes.outputs.docs_only != 'true'
         run: make install-helm
 
       - name: Lint the chart
+        if: steps.changes.outputs.docs_only != 'true'
         run: helm lint ./dist/chart
 
       - name: Install
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           make helm-deploy
           kubectl wait deployment -A -l control-plane=controller-manager --for=condition=Available --timeout=180s
 
       - name: Upgrade
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           make helm-deploy
           make helm-history
 
       - name: Create a budget
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           kubectl create namespace chart-check
           kubectl -n chart-check apply -f config/samples/cardinality_v1alpha1_cardinalitybudget.yaml
 
       - name: Uninstall keeps the CRD and the budget
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           make helm-uninstall
           kubectl get crd cardinalitybudgets.cardinality.telemetry-compass.com

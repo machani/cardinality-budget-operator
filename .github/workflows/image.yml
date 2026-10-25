@@ -24,20 +24,32 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that changes only documentation skips the steps below; the job still reports
+      # success, so the required checks pass without a full run (hack/ci/docs-only.sh).
+      - name: Detect a docs-only change
+        id: changes
+        run: bash hack/ci/docs-only.sh
 
       - name: Set up QEMU
+        if: steps.changes.outputs.docs_only != 'true'
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Docker Buildx
+        if: steps.changes.outputs.docs_only != 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build linux/amd64 and linux/arm64
+        if: steps.changes.outputs.docs_only != 'true'
         run: docker buildx build --platform linux/amd64,linux/arm64 -t cardinality-budget-operator:ci .
 
       - name: Build the amd64 image for scanning
+        if: steps.changes.outputs.docs_only != 'true'
         run: docker buildx build --platform linux/amd64 --load -t cardinality-budget-operator:scan .
 
       - name: Scan for vulnerabilities
+        if: steps.changes.outputs.docs_only != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: cardinality-budget-operator:scan

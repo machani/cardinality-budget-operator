@@ -35,13 +35,22 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that changes only documentation skips the steps below; the job still reports
+      # success, so the required checks pass without a full run (hack/ci/docs-only.sh).
+      - name: Detect a docs-only change
+        id: changes
+        run: bash hack/ci/docs-only.sh
 
       - name: Setup Go
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Run the provider against Prometheus ${{ matrix.prometheus }}
+        if: steps.changes.outputs.docs_only != 'true'
         env:
           PROMETHEUS_URL: http://localhost:9090
         run: go test -tags=promcompat ./internal/usage/ -run TestRealPrometheus -v
