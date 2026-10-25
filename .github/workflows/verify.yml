@@ -23,8 +23,16 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that changes only documentation skips the steps below; the job still reports
+      # success, so the required checks pass without a full run (hack/ci/docs-only.sh).
+      - name: Detect a docs-only change
+        id: changes
+        run: bash hack/ci/docs-only.sh
 
       - name: Setup Go
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
@@ -32,12 +40,14 @@ jobs:
       # bin/ holds the tools the Makefile builds or downloads (controller-gen, kustomize, setup-envtest and
       # the envtest binaries, the custom golangci-lint). Building them takes minutes; cache them.
       - name: Cache tools in bin/
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bin
           key: bin-${{ runner.os }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
 
       - name: Verify
+        if: steps.changes.outputs.docs_only != 'true'
         run: make verify
 
   vulncheck:
@@ -50,11 +60,20 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that changes only documentation skips the steps below; the job still reports
+      # success, so the required checks pass without a full run (hack/ci/docs-only.sh).
+      - name: Detect a docs-only change
+        id: changes
+        run: bash hack/ci/docs-only.sh
 
       - name: Setup Go
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go.mod
 
       - name: Scan for known vulnerabilities
+        if: steps.changes.outputs.docs_only != 'true'
         run: make vulncheck
