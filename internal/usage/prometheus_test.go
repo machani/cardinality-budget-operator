@@ -116,6 +116,19 @@ func TestValidMeasurement(t *testing.T) {
 	}
 }
 
+func TestInfosDoNotInvalidate(t *testing.T) {
+	fake := testutil.NewFakePrometheus()
+	defer fake.Close()
+	p := newProvider(t, fake, "namespace")
+	fake.SetResult(p.CountQuery(testNamespace), testutil.Sample{Value: 42})
+	fake.SetInfos("PromQL info: metric might not be a counter")
+
+	m, err := p.Measure(context.Background(), testNamespace)
+	if err != nil || m.ActiveSeries != 42 {
+		t.Errorf("m = %+v, err = %v; infos must not make the measurement invalid", m, err)
+	}
+}
+
 func TestEmptyResultIsZeroWhenValid(t *testing.T) {
 	fake := testutil.NewFakePrometheus()
 	defer fake.Close()
