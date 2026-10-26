@@ -51,6 +51,7 @@ type FakePrometheus struct {
 	lastConfigTime      time.Time
 	results             map[string][]Sample
 	warnings            []string
+	infos               []string
 	queryErrorStatus    int
 	queryErrorMessage   string
 	queries             []string
@@ -112,6 +113,14 @@ func (f *FakePrometheus) SetWarnings(warnings ...string) {
 	f.warnings = warnings
 }
 
+// SetInfos sets the infos (Prometheus 3 informational annotations) returned with every successful query.
+// They must not make a measurement invalid.
+func (f *FakePrometheus) SetInfos(infos ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.infos = infos
+}
+
 // SetQueryError makes every query fail with the given HTTP status and message. Status 0 clears it.
 func (f *FakePrometheus) SetQueryError(httpStatus int, message string) {
 	f.mu.Lock()
@@ -160,7 +169,7 @@ func (f *FakePrometheus) handleQuery(w http.ResponseWriter, r *http.Request) {
 	f.queries = append(f.queries, query)
 	errStatus, errMessage := f.queryErrorStatus, f.queryErrorMessage
 	samples := slices.Clone(f.results[query])
-	warnings := slices.Clone(f.warnings)
+	warnings, infos := slices.Clone(f.warnings), slices.Clone(f.infos)
 	f.mu.Unlock()
 
 	if errStatus != 0 {
@@ -178,7 +187,11 @@ func (f *FakePrometheus) handleQuery(w http.ResponseWriter, r *http.Request) {
 			"value":  []any{now, strconv.FormatFloat(s.Value, 'f', -1, 64)},
 		})
 	}
-	writeJSON(w, http.StatusOK, apiResponse(map[string]any{"resultType": "vector", "result": result}, warnings))
+	body := apiResponse(map[string]any{"resultType": "vector", "result": result}, warnings)
+	if len(infos) > 0 {
+		body["infos"] = infos
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // apiResponse builds the success envelope of the Prometheus HTTP API.

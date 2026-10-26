@@ -30,6 +30,7 @@ import (
 	commonconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // userAgentName identifies the operator in backend requests.
@@ -220,14 +221,19 @@ func (p *PrometheusProvider) checkWarmup(ctx context.Context) error {
 	return nil
 }
 
-// query runs an instant query. Any warning makes the result partial and therefore invalid.
+// query runs an instant query. Any warning makes the result partial and therefore invalid (ADR 0005).
+// Infos (Prometheus 3 informational annotations, for example "metric might not be a counter") say
+// nothing about completeness, so they are only logged.
 func (p *PrometheusProvider) query(ctx context.Context, q string, ts time.Time) (model.Vector, error) {
-	value, warnings, err := p.api.Query(ctx, q, ts, promv1.WithTimeout(p.settings.QueryTimeout))
+	value, warnings, infos, err := p.api.Query(ctx, q, ts, promv1.WithTimeout(p.settings.QueryTimeout))
 	if err != nil {
 		return nil, &InvalidError{Reason: BackendUnreachable, Message: "query failed: " + err.Error()}
 	}
 	if len(warnings) > 0 {
 		return nil, &InvalidError{Reason: PartialData, Message: "query returned warnings: " + strings.Join(warnings, "; ")}
+	}
+	if len(infos) > 0 {
+		logf.FromContext(ctx).V(1).Info("query returned infos", "infos", strings.Join(infos, "; "))
 	}
 	if value == nil {
 		return nil, &InvalidError{Reason: BackendUnreachable, Message: "query returned no result"}
