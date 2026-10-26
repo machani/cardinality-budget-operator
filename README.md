@@ -118,6 +118,9 @@ or with Helm (chart in `dist/chart`; CRDs are kept on uninstall):
 make helm-deploy IMG=<registry>/cardinality-budget-operator:<tag>
 ```
 
+`make helm-deploy` installs two replicas. The generated chart defaults to `manager.replicas: 1`, so add
+`--set manager.replicas=2` when you run `helm install` yourself.
+
 Point `--prometheus-url` at your Prometheus (the default is the lab's `kps-prometheus.monitoring.svc:9090`), and
 label the Prometheus namespace `metrics=enabled` so it may scrape the operator through the NetworkPolicy.
 
