@@ -275,6 +275,18 @@ func TestMergeEventsCombinesSameReason(t *testing.T) {
 	}
 }
 
+func TestMergeEventsSaysASharedTailOnce(t *testing.T) {
+	got := mergeEvents([]budgetEvent{
+		{Type: "Normal", Reason: "Restored", Note: "Restored a", Tail: "usage is below the warn threshold"},
+		{Type: "Normal", Reason: "Restored", Note: "Restored b", Tail: "usage is below the warn threshold"},
+		{Type: "Normal", Reason: "Restored", Note: "Restored c", Tail: "c is now protected"},
+	})
+	want := "Restored a; Restored b (usage is below the warn threshold); Restored c (c is now protected)"
+	if len(got) != 1 || got[0].Note != want {
+		t.Errorf("mergeEvents = %v, want one Event with note %q", got, want)
+	}
+}
+
 func TestMergeEventsKeepsNoteWithinLimit(t *testing.T) {
 	long := strings.Repeat("é", maxEventNote) // 2 bytes each
 	got := mergeEvents([]budgetEvent{{Type: "Warning", Reason: "Dropped", Note: long}})[0].Note

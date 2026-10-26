@@ -18,6 +18,8 @@ package controller
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"unicode/utf8"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +39,9 @@ type budgetEvent struct {
 	Type   string // corev1.EventTypeNormal or corev1.EventTypeWarning
 	Reason string
 	Note   string
+	// Tail is said once after all the notes it applies to when Events are combined, for example the
+	// reason shared by several restores.
+	Tail string
 }
 
 // stateEvent returns the Event for a state change, or nil when nothing changed. The state is the phase
@@ -70,22 +75,48 @@ func stateEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budg
 // mergeEvents combines the Events of one reconcile that share type and reason into one Event, in
 // first-seen order. The Events API folds Events with the same reason sent within 6 minutes into a series
 // that keeps only the first note, so five separate Reverted Events would show only the first metric.
+// Notes with the same tail are joined, and the tail is said once in parentheses after them.
 func mergeEvents(in []budgetEvent) []budgetEvent {
-	out := make([]budgetEvent, 0, len(in))
+	type tailGroup struct {
+		tail  string
+		notes []string
+	}
+	type merged struct {
+		event  budgetEvent
+		groups []tailGroup
+	}
+	var out []merged
 	index := map[string]int{}
 	for _, e := range in {
 		key := e.Type + "/" + e.Reason
-		if i, ok := index[key]; ok {
-			out[i].Note += "; " + e.Note
-			continue
+		i, ok := index[key]
+		if !ok {
+			i = len(out)
+			index[key] = i
+			out = append(out, merged{event: budgetEvent{Type: e.Type, Reason: e.Reason}})
 		}
-		index[key] = len(out)
-		out = append(out, e)
+		m := &out[i]
+		g := slices.IndexFunc(m.groups, func(g tailGroup) bool { return g.tail == e.Tail })
+		if g < 0 {
+			m.groups = append(m.groups, tailGroup{tail: e.Tail})
+			g = len(m.groups) - 1
+		}
+		m.groups[g].notes = append(m.groups[g].notes, e.Note)
 	}
-	for i := range out {
-		out[i].Note = truncateNote(out[i].Note)
+	events := make([]budgetEvent, 0, len(out))
+	for _, m := range out {
+		parts := make([]string, 0, len(m.groups))
+		for _, g := range m.groups {
+			part := strings.Join(g.notes, "; ")
+			if g.tail != "" {
+				part += " (" + g.tail + ")"
+			}
+			parts = append(parts, part)
+		}
+		m.event.Note = truncateNote(strings.Join(parts, "; "))
+		events = append(events, m.event)
 	}
-	return out
+	return events
 }
 
 // truncateNote cuts a note to the API limit on a UTF-8 boundary; status keeps the full record.

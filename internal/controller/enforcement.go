@@ -232,8 +232,8 @@ func (e *enforcement) checkEffectiveness(ctx context.Context, reloaded bool) err
 		d.State = cardinalityv1alpha1.DropIneffective
 		e.pause(cardinalityv1alpha1.ReasonIneffective, fmt.Sprintf(
 			"dropping %s left %d of %d series; series also come from outside the selected monitors", d.Metric, series, d.SeriesAtDrop))
-		e.event(corev1.EventTypeWarning, cardinalityv1alpha1.ReasonIneffective, "Drop of %s is ineffective: %d of %d series remain; enforcement paused",
-			d.Metric, series, d.SeriesAtDrop)
+		e.eventWithTail(corev1.EventTypeWarning, cardinalityv1alpha1.ReasonIneffective, "enforcement paused until resumed",
+			"Drop of %s is ineffective: %d of %d series remain", d.Metric, series, d.SeriesAtDrop)
 	}
 	return nil
 }
@@ -382,9 +382,9 @@ func (e *enforcement) checkDriftAndExtend(ctx context.Context) error {
 			d.State = cardinalityv1alpha1.DropReverted
 			e.pause(cardinalityv1alpha1.ReasonReverted, fmt.Sprintf("the drop rule for %s was removed from %s", d.Metric,
 				strings.Join(drifted, ", ")))
-			e.event(corev1.EventTypeWarning, cardinalityv1alpha1.ReasonReverted,
-				"The drop rule for %s was removed from %s; it will not be re-applied. Enforcement paused until resumed",
-				d.Metric, strings.Join(drifted, ", "))
+			e.eventWithTail(corev1.EventTypeWarning, cardinalityv1alpha1.ReasonReverted,
+				"not re-applied; enforcement paused until resumed",
+				"Drop rule for %s removed from %s", d.Metric, strings.Join(drifted, ", "))
 		}
 		d.MonitorCount = e.ownedCount(d.Metric)
 	}
@@ -545,7 +545,7 @@ func (e *enforcement) restore(ctx context.Context, metric, why string) error {
 	}
 	e.budget.Status.EnforcedDrops = slices.DeleteFunc(e.budget.Status.EnforcedDrops,
 		func(d cardinalityv1alpha1.EnforcedDrop) bool { return d.Metric == metric })
-	e.event(corev1.EventTypeNormal, "Restored", "Restored %s: %s", metric, why)
+	e.eventWithTail(corev1.EventTypeNormal, "Restored", why, "Restored %s", metric)
 	return nil
 }
 
@@ -621,7 +621,13 @@ func (e *enforcement) pauseMessage(reason string) string {
 }
 
 func (e *enforcement) event(eventType, reason, format string, args ...any) {
-	e.events = append(e.events, budgetEvent{Type: eventType, Reason: reason, Note: fmt.Sprintf(format, args...)})
+	e.eventWithTail(eventType, reason, "", format, args...)
+}
+
+// eventWithTail records an Event whose tail is shared with others of the same reason in this run, so a
+// combined Event says it once (see mergeEvents).
+func (e *enforcement) eventWithTail(eventType, reason, tail, format string, args ...any) {
+	e.events = append(e.events, budgetEvent{Type: eventType, Reason: reason, Note: fmt.Sprintf(format, args...), Tail: tail})
 }
 
 // ownedCount counts selected monitors that carry the owned drop rule for metric.
