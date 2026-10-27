@@ -81,6 +81,9 @@ jobs:
         run: |
           make helm-deploy
           kubectl wait deployment -A -l control-plane=controller-manager --for=condition=Available --timeout=180s
+          replicas=$(kubectl get deployment -A -l control-plane=controller-manager -o jsonpath='{.items[0].status.readyReplicas}')
+          echo "ready replicas: $replicas"
+          test "$replicas" = 2
 
       - name: Upgrade
         if: steps.changes.outputs.docs_only != 'true'

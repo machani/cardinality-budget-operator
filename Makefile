@@ -302,6 +302,9 @@ HELM_NAMESPACE ?= cardinality-budget-operator-system
 HELM_RELEASE ?= cardinality-budget-operator
 ## Path to the Helm chart directory
 HELM_CHART_DIR ?= dist/chart
+## Operator replicas for helm-deploy. The helm plugin always generates manager.replicas: 1, so HA (two
+## replicas with leader election, F-0302) is set here instead of in dist/ (which is never edited by hand).
+HELM_REPLICAS ?= 2
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
 
@@ -319,6 +322,7 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		--create-namespace \
 		--set manager.image.repository=$${IMG%:*} \
 		--set manager.image.tag=$${IMG##*:} \
+		--set manager.replicas=$(HELM_REPLICAS) \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
