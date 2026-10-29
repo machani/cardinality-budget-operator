@@ -293,7 +293,7 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 
 			cmd = exec.Command("kubectl", "apply", "-n", budgetNamespace,
-				"-f", "config/samples/cardinality_v1alpha1_cardinalitybudget.yaml")
+				"-f", "config/samples/cardinality_v1beta1_cardinalitybudget.yaml")
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 

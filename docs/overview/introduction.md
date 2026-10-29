@@ -26,7 +26,7 @@ demo        default   Warning   1012     1100    92        Warn   3m
 ## The resource
 
 ```yaml
-apiVersion: cardinality.telemetry-compass.com/v1alpha1
+apiVersion: cardinality.telemetry-compass.com/v1beta1
 kind: CardinalityBudget
 metadata:
   name: default          # always "default": one budget per namespace

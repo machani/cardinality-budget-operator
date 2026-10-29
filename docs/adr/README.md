@@ -28,3 +28,5 @@ Rules:
 | [0014](0014-spec-defaults.md) | Spec defaults | Accepted |
 | [0015](0015-events-and-condition-reasons.md) | Events in every mode, condition reasons, and Stale | Accepted |
 | [0016](0016-enforcement-details.md) | Enforcement details: effectiveness baseline, restore step, ownership edge cases | Accepted |
+| [0017](0017-api-v1beta1.md) | API v1beta1 without a conversion webhook | Accepted |
+| [0018](0018-release-pipeline.md) | Release pipeline: ghcr.io, keyless signing, SBOM, CHANGELOG | Accepted |

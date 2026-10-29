@@ -41,7 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 	"github.com/machani/cardinality-budget-operator/internal/enforce"
 	"github.com/machani/cardinality-budget-operator/internal/metrics"
 	"github.com/machani/cardinality-budget-operator/internal/usage"
@@ -91,7 +91,7 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	log := logf.FromContext(ctx).WithValues("namespace", req.Namespace, "budget", req.Name)
 	ctx = logf.IntoContext(ctx, log)
 
-	budget := &cardinalityv1alpha1.CardinalityBudget{}
+	budget := &cardinalityv1beta1.CardinalityBudget{}
 	if err := r.Get(ctx, req.NamespacedName, budget); err != nil {
 		if apierrors.IsNotFound(err) {
 			metrics.DeleteBudget(req.Namespace)
@@ -104,9 +104,9 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if !budget.DeletionTimestamp.IsZero() {
 		return r.finalize(ctx, budget)
 	}
-	if !controllerutil.ContainsFinalizer(budget, cardinalityv1alpha1.CleanupFinalizer) {
+	if !controllerutil.ContainsFinalizer(budget, cardinalityv1beta1.CleanupFinalizer) {
 		original := budget.DeepCopy()
-		controllerutil.AddFinalizer(budget, cardinalityv1alpha1.CleanupFinalizer)
+		controllerutil.AddFinalizer(budget, cardinalityv1beta1.CleanupFinalizer)
 		if err := r.Patch(ctx, budget, client.MergeFrom(original)); err != nil {
 			return r.handleWriteError(err, "adding the finalizer")
 		}
@@ -177,7 +177,7 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		Limit:        budget.Spec.MaxActiveSeries,
 		ActiveSeries: budget.Status.ActiveSeries,
 		DropsActive:  len(activeDrops(budget.Status.EnforcedDrops)),
-		Ready:        readyReason(&budget.Status) == cardinalityv1alpha1.ReasonMeasurementValid,
+		Ready:        readyReason(&budget.Status) == cardinalityv1beta1.ReasonMeasurementValid,
 		PauseReason:  pauseReasonOf(&budget.Status),
 	})
 	return result, nil
@@ -186,8 +186,8 @@ func (r *CardinalityBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // resume clears a pause when the resume annotation has a value not acted on yet (ADR 0008): the pause
 // is lifted and the token is recorded. Reverted drops are then cleaned up by the enforcement step: their
 // leftover rules are removed (never re-applied) and their entries dropped (ADR 0016).
-func (r *CardinalityBudgetReconciler) resume(budget *cardinalityv1alpha1.CardinalityBudget) *budgetEvent {
-	token := budget.Annotations[cardinalityv1alpha1.ResumeAnnotation]
+func (r *CardinalityBudgetReconciler) resume(budget *cardinalityv1beta1.CardinalityBudget) *budgetEvent {
+	token := budget.Annotations[cardinalityv1beta1.ResumeAnnotation]
 	st := &budget.Status
 	if token == "" || token == st.LastResumeToken {
 		return nil
@@ -198,7 +198,7 @@ func (r *CardinalityBudgetReconciler) resume(budget *cardinalityv1alpha1.Cardina
 		return nil
 	}
 	// Ineffective drops keep their rule and their state; only the pause is lifted.
-	meta.RemoveStatusCondition(&st.Conditions, cardinalityv1alpha1.ConditionEnforced)
+	meta.RemoveStatusCondition(&st.Conditions, cardinalityv1beta1.ConditionEnforced)
 	return &budgetEvent{Type: corev1.EventTypeNormal, Reason: "Resumed",
 		Note: fmt.Sprintf("Enforcement resumed (was paused: %s)", reason)}
 }
@@ -206,9 +206,9 @@ func (r *CardinalityBudgetReconciler) resume(budget *cardinalityv1alpha1.Cardina
 // finalize removes every owned drop rule from the namespace's monitors, then the finalizer. While the
 // kill switch is on, deletion waits (ADR 0010); the runbook describes manual removal by label.
 func (r *CardinalityBudgetReconciler) finalize(ctx context.Context,
-	budget *cardinalityv1alpha1.CardinalityBudget) (ctrl.Result, error) {
+	budget *cardinalityv1beta1.CardinalityBudget) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	if !controllerutil.ContainsFinalizer(budget, cardinalityv1alpha1.CleanupFinalizer) {
+	if !controllerutil.ContainsFinalizer(budget, cardinalityv1beta1.CleanupFinalizer) {
 		return ctrl.Result{}, nil
 	}
 	if r.EnforcementPaused {
@@ -240,7 +240,7 @@ func (r *CardinalityBudgetReconciler) finalize(ctx context.Context,
 	}
 
 	original := budget.DeepCopy()
-	controllerutil.RemoveFinalizer(budget, cardinalityv1alpha1.CleanupFinalizer)
+	controllerutil.RemoveFinalizer(budget, cardinalityv1beta1.CleanupFinalizer)
 	if err := r.Patch(ctx, budget, client.MergeFrom(original)); err != nil {
 		return r.handleWriteError(err, "removing the finalizer")
 	}
@@ -251,11 +251,11 @@ func (r *CardinalityBudgetReconciler) finalize(ctx context.Context,
 
 // isCacheFresh re-reads the budget without the cache (ADR 0010). If the cache is behind (for example
 // it has not seen our last status write yet), enforcement could act on old enforcedDrops, so it waits.
-func (r *CardinalityBudgetReconciler) isCacheFresh(ctx context.Context, cached *cardinalityv1alpha1.CardinalityBudget) (bool, error) {
+func (r *CardinalityBudgetReconciler) isCacheFresh(ctx context.Context, cached *cardinalityv1beta1.CardinalityBudget) (bool, error) {
 	if r.APIReader == nil {
 		return true, nil
 	}
-	fresh := &cardinalityv1alpha1.CardinalityBudget{}
+	fresh := &cardinalityv1beta1.CardinalityBudget{}
 	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(cached), fresh); err != nil {
 		return false, fmt.Errorf("reading the budget without cache: %w", err)
 	}
@@ -284,7 +284,7 @@ func (r *CardinalityBudgetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}}
 	toBudget := handler.EnqueueRequestsFromMapFunc(budgetForMonitor)
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&cardinalityv1alpha1.CardinalityBudget{}, builder.WithPredicates(predicate.Or[client.Object](
+		For(&cardinalityv1beta1.CardinalityBudget{}, builder.WithPredicates(predicate.Or[client.Object](
 			predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{}, deleting))).
 		Watches(&monitoringv1.ServiceMonitor{}, toBudget).
 		Watches(&monitoringv1.PodMonitor{}, toBudget).
@@ -296,7 +296,7 @@ func (r *CardinalityBudgetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // one, always named "default" (ADR 0004). A namespace without a budget costs one cheap NotFound.
 func budgetForMonitor(_ context.Context, monitor client.Object) []reconcile.Request {
 	return []reconcile.Request{{NamespacedName: types.NamespacedName{
-		Namespace: monitor.GetNamespace(), Name: cardinalityv1alpha1.BudgetName}}}
+		Namespace: monitor.GetNamespace(), Name: cardinalityv1beta1.BudgetName}}}
 }
 
 func (r *CardinalityBudgetReconciler) now() time.Time {

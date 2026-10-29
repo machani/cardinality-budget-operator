@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // Monitor is a ServiceMonitor or a PodMonitor, seen through what enforcement needs: its endpoints'
@@ -86,14 +86,14 @@ func (m Monitor) relabelLists() []*[]monitoringv1.RelabelConfig {
 // OwnedMetrics returns the metrics listed in the ownership annotation. An unreadable annotation is an
 // error: the caller must then leave the monitor alone rather than guess.
 func (m Monitor) OwnedMetrics() ([]string, error) {
-	value := m.Object.GetAnnotations()[cardinalityv1alpha1.DroppedMetricsAnnotation]
+	value := m.Object.GetAnnotations()[cardinalityv1beta1.DroppedMetricsAnnotation]
 	if value == "" {
 		return nil, nil
 	}
 	var owned []string
 	if err := json.Unmarshal([]byte(value), &owned); err != nil {
 		return nil, fmt.Errorf("%s: annotation %s is not a JSON list: %w", m.Key(),
-			cardinalityv1alpha1.DroppedMetricsAnnotation, err)
+			cardinalityv1beta1.DroppedMetricsAnnotation, err)
 	}
 	return owned, nil
 }
@@ -181,8 +181,8 @@ func setOwned(obj client.Object, owned []string) {
 	owned = slices.Compact(slices.Sorted(slices.Values(owned)))
 	annotations, labels := obj.GetAnnotations(), obj.GetLabels()
 	if len(owned) == 0 {
-		delete(annotations, cardinalityv1alpha1.DroppedMetricsAnnotation)
-		delete(labels, cardinalityv1alpha1.EnforcedLabel)
+		delete(annotations, cardinalityv1beta1.DroppedMetricsAnnotation)
+		delete(labels, cardinalityv1beta1.EnforcedLabel)
 	} else {
 		if annotations == nil {
 			annotations = map[string]string{}
@@ -191,8 +191,8 @@ func setOwned(obj client.Object, owned []string) {
 			labels = map[string]string{}
 		}
 		value, _ := json.Marshal(owned) // a []string always marshals
-		annotations[cardinalityv1alpha1.DroppedMetricsAnnotation] = string(value)
-		labels[cardinalityv1alpha1.EnforcedLabel] = "true"
+		annotations[cardinalityv1beta1.DroppedMetricsAnnotation] = string(value)
+		labels[cardinalityv1beta1.EnforcedLabel] = "true"
 	}
 	obj.SetAnnotations(annotations)
 	obj.SetLabels(labels)

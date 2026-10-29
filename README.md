@@ -51,7 +51,7 @@ flowchart LR
 ## Example
 
 ```yaml
-apiVersion: cardinality.telemetry-compass.com/v1alpha1
+apiVersion: cardinality.telemetry-compass.com/v1beta1
 kind: CardinalityBudget
 metadata:
   name: default

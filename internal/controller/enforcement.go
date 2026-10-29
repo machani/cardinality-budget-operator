@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 	"github.com/machani/cardinality-budget-operator/internal/enforce"
 	"github.com/machani/cardinality-budget-operator/internal/metrics"
 )
@@ -55,7 +55,7 @@ var errSkipEnforcement = errors.New("backend could not confirm the state; enforc
 type enforcement struct {
 	r             *CardinalityBudgetReconciler
 	log           logr.Logger
-	budget        *cardinalityv1alpha1.CardinalityBudget
+	budget        *cardinalityv1beta1.CardinalityBudget
 	oldGeneration int64 // status.observedGeneration before this reconcile (ADR 0009 re-sync)
 	now           time.Time
 	writer        *enforce.Writer
@@ -76,7 +76,7 @@ type enforcement struct {
 	resync        map[string]bool // adopted drops to extend to every selected monitor
 }
 
-func newEnforcement(r *CardinalityBudgetReconciler, log logr.Logger, budget *cardinalityv1alpha1.CardinalityBudget,
+func newEnforcement(r *CardinalityBudgetReconciler, log logr.Logger, budget *cardinalityv1beta1.CardinalityBudget,
 	oldGeneration int64, now time.Time, protected []*regexp.Regexp) *enforcement {
 	return &enforcement{
 		r: r, log: log, budget: budget, oldGeneration: oldGeneration, now: now, protected: protected,
@@ -104,7 +104,7 @@ func (e *enforcement) run(ctx context.Context, selector labels.Selector) (time.D
 		reloaded = ok
 		unverified := e.now.Before(st.LastEnforcementTime.Add(e.r.SettlePeriod)) || hasPending(st.EnforcedDrops)
 		if !reloaded && unverified && e.now.Sub(st.LastEnforcementTime.Time) > reloadTimeout {
-			e.pause(cardinalityv1alpha1.ReasonConfigReloadFailed,
+			e.pause(cardinalityv1beta1.ReasonConfigReloadFailed,
 				fmt.Sprintf("Prometheus did not load its configuration within %s of the last change", reloadTimeout))
 		}
 	}
@@ -160,7 +160,7 @@ func (e *enforcement) run(ctx context.Context, selector labels.Selector) (time.D
 func (e *enforcement) youngestPendingLeft() time.Duration {
 	var left time.Duration
 	for _, d := range e.budget.Status.EnforcedDrops {
-		if d.State == cardinalityv1alpha1.DropPending {
+		if d.State == cardinalityv1beta1.DropPending {
 			left = max(left, d.Since.Add(e.r.SettlePeriod).Sub(e.now))
 		}
 	}
@@ -218,7 +218,7 @@ func (e *enforcement) write(ctx context.Context, uid types.UID, updated enforce.
 func (e *enforcement) checkEffectiveness(ctx context.Context, reloaded bool) error {
 	for i := range e.budget.Status.EnforcedDrops {
 		d := &e.budget.Status.EnforcedDrops[i]
-		if d.State != cardinalityv1alpha1.DropPending || !reloaded || e.now.Before(d.Since.Add(e.r.SettlePeriod)) {
+		if d.State != cardinalityv1beta1.DropPending || !reloaded || e.now.Before(d.Since.Add(e.r.SettlePeriod)) {
 			continue
 		}
 		series, err := e.r.Provider.MetricSeries(ctx, e.budget.Namespace, d.Metric)
@@ -226,13 +226,13 @@ func (e *enforcement) checkEffectiveness(ctx context.Context, reloaded bool) err
 			return errSkipEnforcement
 		}
 		if float64(series) <= effectiveFraction*float64(d.SeriesAtDrop) {
-			d.State = cardinalityv1alpha1.DropEffective
+			d.State = cardinalityv1beta1.DropEffective
 			continue
 		}
-		d.State = cardinalityv1alpha1.DropIneffective
-		e.pause(cardinalityv1alpha1.ReasonIneffective, fmt.Sprintf(
+		d.State = cardinalityv1beta1.DropIneffective
+		e.pause(cardinalityv1beta1.ReasonIneffective, fmt.Sprintf(
 			"dropping %s left %d of %d series; series also come from outside the selected monitors", d.Metric, series, d.SeriesAtDrop))
-		e.eventWithTail(corev1.EventTypeWarning, cardinalityv1alpha1.ReasonIneffective, "enforcement paused until resumed",
+		e.eventWithTail(corev1.EventTypeWarning, cardinalityv1beta1.ReasonIneffective, "enforcement paused until resumed",
 			"Drop of %s is ineffective: %d of %d series remain", d.Metric, series, d.SeriesAtDrop)
 	}
 	return nil
@@ -250,7 +250,7 @@ func (e *enforcement) cleanUpReverted(ctx context.Context) error {
 		return nil
 	}
 	for _, d := range slices.Clone(e.budget.Status.EnforcedDrops) {
-		if d.State != cardinalityv1alpha1.DropReverted {
+		if d.State != cardinalityv1beta1.DropReverted {
 			continue
 		}
 		if err := e.restore(ctx, d.Metric, "cleaned up after resume; a reverted drop is not re-applied"); err != nil {
@@ -284,8 +284,8 @@ func (e *enforcement) adoptUnrecorded(ctx context.Context) error {
 			}
 			recorded[metric] = true
 			e.resync[metric] = true
-			e.budget.Status.EnforcedDrops = append(e.budget.Status.EnforcedDrops, cardinalityv1alpha1.EnforcedDrop{
-				Metric: metric, Since: metav1.NewTime(e.now), State: cardinalityv1alpha1.DropPending, SeriesAtDrop: series,
+			e.budget.Status.EnforcedDrops = append(e.budget.Status.EnforcedDrops, cardinalityv1beta1.EnforcedDrop{
+				Metric: metric, Since: metav1.NewTime(e.now), State: cardinalityv1beta1.DropPending, SeriesAtDrop: series,
 			})
 			e.log.Info("adopted a drop found on monitors but not in status", "metric", metric)
 		}
@@ -323,7 +323,7 @@ func (e *enforcement) cleanDeselected(ctx context.Context) error {
 // restoreProtected restores, immediately, every drop whose metric is now protected (ADR 0009).
 func (e *enforcement) restoreProtected(ctx context.Context) error {
 	for _, d := range slices.Clone(e.budget.Status.EnforcedDrops) {
-		if d.State == cardinalityv1alpha1.DropReverted || !isProtected(d.Metric, e.protected) {
+		if d.State == cardinalityv1beta1.DropReverted || !isProtected(d.Metric, e.protected) {
 			continue
 		}
 		if err := e.restore(ctx, d.Metric, "it is now protected"); err != nil {
@@ -341,7 +341,7 @@ func (e *enforcement) checkDriftAndExtend(ctx context.Context) error {
 	resyncAll := e.budget.Generation != e.oldGeneration
 	for i := range e.budget.Status.EnforcedDrops {
 		d := &e.budget.Status.EnforcedDrops[i]
-		if d.State == cardinalityv1alpha1.DropReverted {
+		if d.State == cardinalityv1beta1.DropReverted {
 			continue
 		}
 		drifted, extended := make([]string, 0, len(e.order)), make([]string, 0, len(e.order))
@@ -379,10 +379,10 @@ func (e *enforcement) checkDriftAndExtend(ctx context.Context) error {
 			e.event(corev1.EventTypeNormal, "Extended", "Extended the drop of %s to %s", d.Metric, strings.Join(extended, ", "))
 		}
 		if len(drifted) > 0 {
-			d.State = cardinalityv1alpha1.DropReverted
-			e.pause(cardinalityv1alpha1.ReasonReverted, fmt.Sprintf("the drop rule for %s was removed from %s", d.Metric,
+			d.State = cardinalityv1beta1.DropReverted
+			e.pause(cardinalityv1beta1.ReasonReverted, fmt.Sprintf("the drop rule for %s was removed from %s", d.Metric,
 				strings.Join(drifted, ", ")))
-			e.eventWithTail(corev1.EventTypeWarning, cardinalityv1alpha1.ReasonReverted,
+			e.eventWithTail(corev1.EventTypeWarning, cardinalityv1beta1.ReasonReverted,
 				"not re-applied; enforcement paused until resumed",
 				"Drop rule for %s removed from %s", d.Metric, strings.Join(drifted, ", "))
 		}
@@ -406,7 +406,7 @@ func (e *enforcement) act(ctx context.Context, settled bool) error {
 	}
 
 	switch {
-	case spec.Mode != cardinalityv1alpha1.ModeEnforce:
+	case spec.Mode != cardinalityv1beta1.ModeEnforce:
 		// Leaving Enforce: restore everything gradually, whatever the usage (ADR 0009).
 		return e.restoreStep(ctx, step, "the budget is no longer in Enforce mode")
 	case len(active) > int(spec.Enforcement.MaxTotalDrops):
@@ -473,9 +473,9 @@ func (e *enforcement) drop(ctx context.Context, metric string) error {
 		e.log.Info("no selected monitor can take the drop rule", "metric", metric)
 		return nil
 	}
-	e.budget.Status.EnforcedDrops = append(e.budget.Status.EnforcedDrops, cardinalityv1alpha1.EnforcedDrop{
+	e.budget.Status.EnforcedDrops = append(e.budget.Status.EnforcedDrops, cardinalityv1beta1.EnforcedDrop{
 		Metric: metric, MonitorCount: e.ownedCount(metric), Since: metav1.NewTime(e.now),
-		State: cardinalityv1alpha1.DropPending, SeriesAtDrop: seriesOf(metric, e.budget.Status.TopMetrics),
+		State: cardinalityv1beta1.DropPending, SeriesAtDrop: seriesOf(metric, e.budget.Status.TopMetrics),
 	})
 	e.event(corev1.EventTypeWarning, "Dropped", "Dropped %s (%d series) on %s", metric,
 		seriesOf(metric, e.budget.Status.TopMetrics), strings.Join(applied, ", "))
@@ -491,12 +491,12 @@ func (e *enforcement) dropsLastHour(ctx context.Context) (int, error) {
 	if reader == nil {
 		reader = e.r.Client
 	}
-	budgets := &cardinalityv1alpha1.CardinalityBudgetList{}
+	budgets := &cardinalityv1beta1.CardinalityBudgetList{}
 	if err := reader.List(ctx, budgets); err != nil {
 		return 0, fmt.Errorf("listing budgets for the hourly drop limit: %w", err)
 	}
 	since := e.now.Add(-time.Hour)
-	count := func(drops []cardinalityv1alpha1.EnforcedDrop) int {
+	count := func(drops []cardinalityv1beta1.EnforcedDrop) int {
 		n := 0
 		for _, d := range drops {
 			// metav1.Time has its own Before(*metav1.Time); compare the embedded time.Time instead.
@@ -519,7 +519,7 @@ func (e *enforcement) dropsLastHour(ctx context.Context) (int, error) {
 // restoreStep restores up to n active drops, most recent first (LIFO, ADR 0009).
 func (e *enforcement) restoreStep(ctx context.Context, n int, why string) error {
 	active := activeDrops(e.budget.Status.EnforcedDrops)
-	slices.SortStableFunc(active, func(a, b cardinalityv1alpha1.EnforcedDrop) int { return b.Since.Compare(a.Since.Time) })
+	slices.SortStableFunc(active, func(a, b cardinalityv1beta1.EnforcedDrop) int { return b.Since.Compare(a.Since.Time) })
 	for _, d := range active[:min(n, len(active))] {
 		if err := e.restore(ctx, d.Metric, why); err != nil {
 			return err
@@ -544,7 +544,7 @@ func (e *enforcement) restore(ctx context.Context, metric, why string) error {
 		}
 	}
 	e.budget.Status.EnforcedDrops = slices.DeleteFunc(e.budget.Status.EnforcedDrops,
-		func(d cardinalityv1alpha1.EnforcedDrop) bool { return d.Metric == metric })
+		func(d cardinalityv1beta1.EnforcedDrop) bool { return d.Metric == metric })
 	e.eventWithTail(corev1.EventTypeNormal, "Restored", why, "Restored %s", metric)
 	return nil
 }
@@ -553,8 +553,8 @@ func (e *enforcement) restore(ctx context.Context, metric, why string) error {
 func (e *enforcement) finishStatus() {
 	st, spec := &e.budget.Status, &e.budget.Spec
 	active := activeDrops(st.EnforcedDrops)
-	if len(active) > 0 && st.Phase != cardinalityv1alpha1.PhaseUnknown {
-		st.Phase = cardinalityv1alpha1.PhaseEnforcing
+	if len(active) > 0 && st.Phase != cardinalityv1beta1.PhaseUnknown {
+		st.Phase = cardinalityv1beta1.PhaseEnforcing
 	}
 	// computeStatus left plannedDrops nil when nothing is planned; otherwise refresh it after this step's drops.
 	if st.PlannedDrops != nil {
@@ -569,23 +569,23 @@ func (e *enforcement) finishStatus() {
 	switch {
 	case reason != "":
 		// A pause stays until the platform resumes it, even while the kill switch is on (ADR 0008).
-		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, reason, e.pauseMessage(reason), gen)
-	case e.r.EnforcementPaused && (spec.Mode == cardinalityv1alpha1.ModeEnforce || len(st.EnforcedDrops) > 0):
-		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1alpha1.ReasonPaused,
+		setCondition(st, cardinalityv1beta1.ConditionEnforced, metav1.ConditionFalse, reason, e.pauseMessage(reason), gen)
+	case e.r.EnforcementPaused && (spec.Mode == cardinalityv1beta1.ModeEnforce || len(st.EnforcedDrops) > 0):
+		setCondition(st, cardinalityv1beta1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1beta1.ReasonPaused,
 			"monitor writes are blocked by --enforcement-paused", gen)
 	case e.rateLimited:
-		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1alpha1.ReasonRateLimited,
+		setCondition(st, cardinalityv1beta1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1beta1.ReasonRateLimited,
 			fmt.Sprintf("the global limit of %d new drops per hour is reached; this clears as the hour moves on",
 				e.r.MaxDropsPerHour), gen)
 	case e.limitReached:
-		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1alpha1.ReasonLimitReached,
+		setCondition(st, cardinalityv1beta1.ConditionEnforced, metav1.ConditionFalse, cardinalityv1beta1.ReasonLimitReached,
 			fmt.Sprintf("over budget, but no metric can be dropped (maxTotalDrops %d, protected and recording-rule metrics skipped)",
 				spec.Enforcement.MaxTotalDrops), gen)
 	case len(active) > 0:
-		setCondition(st, cardinalityv1alpha1.ConditionEnforced, metav1.ConditionTrue, cardinalityv1alpha1.ReasonApplied,
+		setCondition(st, cardinalityv1beta1.ConditionEnforced, metav1.ConditionTrue, cardinalityv1beta1.ReasonApplied,
 			fmt.Sprintf("%d metrics dropped", len(active)), gen)
 	default:
-		meta.RemoveStatusCondition(&st.Conditions, cardinalityv1alpha1.ConditionEnforced)
+		meta.RemoveStatusCondition(&st.Conditions, cardinalityv1beta1.ConditionEnforced)
 	}
 }
 
@@ -594,9 +594,9 @@ func (e *enforcement) pauseReason() string {
 	return pauseReasonOf(&e.budget.Status)
 }
 
-func pauseReasonOf(st *cardinalityv1alpha1.CardinalityBudgetStatus) string {
-	c := meta.FindStatusCondition(st.Conditions, cardinalityv1alpha1.ConditionEnforced)
-	if c != nil && slices.Contains(cardinalityv1alpha1.PauseReasons, c.Reason) {
+func pauseReasonOf(st *cardinalityv1beta1.CardinalityBudgetStatus) string {
+	c := meta.FindStatusCondition(st.Conditions, cardinalityv1beta1.ConditionEnforced)
+	if c != nil && slices.Contains(cardinalityv1beta1.PauseReasons, c.Reason) {
 		return c.Reason
 	}
 	return ""
@@ -612,9 +612,9 @@ func (e *enforcement) pause(reason, message string) {
 
 func (e *enforcement) pauseMessage(reason string) string {
 	if msg, ok := e.pauseMessages[reason]; ok {
-		return msg + "; resume with the " + cardinalityv1alpha1.ResumeAnnotation + " annotation"
+		return msg + "; resume with the " + cardinalityv1beta1.ResumeAnnotation + " annotation"
 	}
-	if c := meta.FindStatusCondition(e.budget.Status.Conditions, cardinalityv1alpha1.ConditionEnforced); c != nil {
+	if c := meta.FindStatusCondition(e.budget.Status.Conditions, cardinalityv1beta1.ConditionEnforced); c != nil {
 		return c.Message
 	}
 	return reason
@@ -644,19 +644,19 @@ func (e *enforcement) ownedCount(metric string) int32 {
 }
 
 // activeDrops are the drops whose rules the operator keeps in place (everything but Reverted).
-func activeDrops(drops []cardinalityv1alpha1.EnforcedDrop) []cardinalityv1alpha1.EnforcedDrop {
-	return slices.DeleteFunc(slices.Clone(drops), func(d cardinalityv1alpha1.EnforcedDrop) bool {
-		return d.State == cardinalityv1alpha1.DropReverted
+func activeDrops(drops []cardinalityv1beta1.EnforcedDrop) []cardinalityv1beta1.EnforcedDrop {
+	return slices.DeleteFunc(slices.Clone(drops), func(d cardinalityv1beta1.EnforcedDrop) bool {
+		return d.State == cardinalityv1beta1.DropReverted
 	})
 }
 
-func hasPending(drops []cardinalityv1alpha1.EnforcedDrop) bool {
-	return slices.ContainsFunc(drops, func(d cardinalityv1alpha1.EnforcedDrop) bool {
-		return d.State == cardinalityv1alpha1.DropPending
+func hasPending(drops []cardinalityv1beta1.EnforcedDrop) bool {
+	return slices.ContainsFunc(drops, func(d cardinalityv1beta1.EnforcedDrop) bool {
+		return d.State == cardinalityv1beta1.DropPending
 	})
 }
 
-func seriesOf(metric string, top []cardinalityv1alpha1.MetricUsage) int64 {
+func seriesOf(metric string, top []cardinalityv1beta1.MetricUsage) int64 {
 	for _, t := range top {
 		if t.Name == metric {
 			return t.Series

@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 const (
@@ -43,8 +43,8 @@ func newTestNamespace(ctx context.Context) string {
 }
 
 // budgetIn returns an unsaved budget named "default" in the namespace.
-func budgetIn(namespace string, spec cardinalityv1alpha1.CardinalityBudgetSpec) *cardinalityv1alpha1.CardinalityBudget {
-	return &cardinalityv1alpha1.CardinalityBudget{
+func budgetIn(namespace string, spec cardinalityv1beta1.CardinalityBudgetSpec) *cardinalityv1beta1.CardinalityBudget {
+	return &cardinalityv1beta1.CardinalityBudget{
 		ObjectMeta: metav1.ObjectMeta{Name: budgetName, Namespace: namespace},
 		Spec:       spec,
 	}

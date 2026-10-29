@@ -111,3 +111,19 @@ kubectl -n <ns> patch cardinalitybudget default --type=json -p '[{"op":"remove",
 1. Delete every budget and wait until they are gone (the operator removes its rules).
 2. Then uninstall the operator (chart or `make undeploy`).
 3. Only then delete the CRD. Removing the operator first leaves budgets stuck deleting (see above).
+
+### Upgrade to v1.0: move budgets to v1beta1
+
+v1.0 serves `v1beta1` (stored) and the deprecated `v1alpha1` with the same schema, so nothing breaks on upgrade
+([ADR 0017](../adr/0017-api-v1beta1.md)). Requests that use `v1alpha1` get a deprecation warning.
+
+1. Upgrade the CRD and the operator (Helm upgrades the CRD from `templates/crd`; Kustomize with `make deploy`).
+2. Re-save the budgets in the new storage version and record it on the CRD:
+
+   ```bash
+   hack/migrate-storage.sh --context <your-context>
+   ```
+
+   It ends with `storedVersions after: ["v1beta1"]`. Safe to run again; required before v2.0, which removes
+   `v1alpha1`.
+3. Change `apiVersion` in your manifests (GitOps repositories) to `cardinality.telemetry-compass.com/v1beta1`.

@@ -24,7 +24,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // teamRules are rules a team wrote. The operator must never change or reorder them.
@@ -125,7 +125,7 @@ func TestWithDropAndWithoutDrop(t *testing.T) {
 	if state(t, dropped, "other") != StateMissing {
 		t.Error("dropping one metric must not affect another")
 	}
-	if dropped.Object.GetLabels()[cardinalityv1alpha1.EnforcedLabel] != "true" {
+	if dropped.Object.GetLabels()[cardinalityv1beta1.EnforcedLabel] != "true" {
 		t.Error("enforced label missing")
 	}
 	if state(t, m, "big") != StateMissing {
@@ -139,10 +139,10 @@ func TestWithDropAndWithoutDrop(t *testing.T) {
 	if !reflect.DeepEqual(restored.Object.(*monitoringv1.ServiceMonitor).Spec, m.Object.(*monitoringv1.ServiceMonitor).Spec) {
 		t.Error("restore did not give back the original endpoints")
 	}
-	if _, ok := restored.Object.GetAnnotations()[cardinalityv1alpha1.DroppedMetricsAnnotation]; ok {
+	if _, ok := restored.Object.GetAnnotations()[cardinalityv1beta1.DroppedMetricsAnnotation]; ok {
 		t.Error("annotation should be removed when nothing is owned")
 	}
-	if _, ok := restored.Object.GetLabels()[cardinalityv1alpha1.EnforcedLabel]; ok {
+	if _, ok := restored.Object.GetLabels()[cardinalityv1beta1.EnforcedLabel]; ok {
 		t.Error("label should be removed when nothing is owned")
 	}
 }
@@ -195,7 +195,7 @@ func TestPartialDrift(t *testing.T) {
 }
 
 func TestBadAnnotationIsAnError(t *testing.T) {
-	m := serviceMonitor(1, map[string]string{cardinalityv1alpha1.DroppedMetricsAnnotation: "not json"})
+	m := serviceMonitor(1, map[string]string{cardinalityv1beta1.DroppedMetricsAnnotation: "not json"})
 	if _, err := m.State("big"); err == nil {
 		t.Error("an unreadable annotation must be an error, not a guess")
 	}

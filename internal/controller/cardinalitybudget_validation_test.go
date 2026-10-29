@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // CEL rules (x-kubernetes-validations) run inside the API server. These tests also answer Phase 1
@@ -33,44 +33,44 @@ import (
 var _ = Describe("CardinalityBudget CEL validation", func() {
 	ctx := context.Background()
 
-	expectRejected := func(budget *cardinalityv1alpha1.CardinalityBudget, message string) {
+	expectRejected := func(budget *cardinalityv1beta1.CardinalityBudget, message string) {
 		err := k8sClient.Create(ctx, budget)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring(message))
 	}
 
-	expectAccepted := func(budget *cardinalityv1alpha1.CardinalityBudget) {
+	expectAccepted := func(budget *cardinalityv1beta1.CardinalityBudget) {
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, budget)).To(Succeed()) })
 	}
 
 	It("rejects a budget not named default (ADR 0004, fact 1)", func() {
-		budget := budgetIn(newTestNamespace(ctx), cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
+		budget := budgetIn(newTestNamespace(ctx), cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
 		budget.Name = "payments"
 		expectRejected(budget, "must be named 'default'")
 	})
 
 	It("rejects maxMetricsToDrop above maxTotalDrops (ADR 0006)", func() {
-		spec := cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
-			Enforcement: cardinalityv1alpha1.EnforcementSpec{MaxMetricsToDrop: 6, MaxTotalDrops: 5}}
+		spec := cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
+			Enforcement: cardinalityv1beta1.EnforcementSpec{MaxMetricsToDrop: 6, MaxTotalDrops: 5}}
 		expectRejected(budgetIn(newTestNamespace(ctx), spec), "less than or equal to maxTotalDrops")
 	})
 
 	It("accepts maxMetricsToDrop up to the defaulted maxTotalDrops", func() {
-		spec := cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
-			Enforcement: cardinalityv1alpha1.EnforcementSpec{MaxMetricsToDrop: 5}}
+		spec := cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
+			Enforcement: cardinalityv1beta1.EnforcementSpec{MaxMetricsToDrop: 5}}
 		expectAccepted(budgetIn(newTestNamespace(ctx), spec))
 	})
 
 	It("rejects a negative gracePeriod (ADR 0014)", func() {
-		spec := cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
-			Enforcement: cardinalityv1alpha1.EnforcementSpec{GracePeriod: metav1.Duration{Duration: -5 * time.Minute}}}
+		spec := cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
+			Enforcement: cardinalityv1beta1.EnforcementSpec{GracePeriod: metav1.Duration{Duration: -5 * time.Minute}}}
 		expectRejected(budgetIn(newTestNamespace(ctx), spec), "gracePeriod")
 	})
 
 	It("rejects an invalid protectedMetrics regex (ADR 0012, fact 9)", func() {
-		spec := cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
-			Enforcement: cardinalityv1alpha1.EnforcementSpec{ProtectedMetrics: []string{"up", "slo_(.*"}}}
+		spec := cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
+			Enforcement: cardinalityv1beta1.EnforcementSpec{ProtectedMetrics: []string{"up", "slo_(.*"}}}
 		expectRejected(budgetIn(newTestNamespace(ctx), spec), "protectedMetrics")
 	})
 
@@ -81,15 +81,15 @@ var _ = Describe("CardinalityBudget CEL validation", func() {
 			tooMany[i] = "metric"
 		}
 		for _, patterns := range [][]string{tooMany, {strings.Repeat("a", 257)}, {""}} {
-			spec := cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
-				Enforcement: cardinalityv1alpha1.EnforcementSpec{ProtectedMetrics: patterns}}
+			spec := cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
+				Enforcement: cardinalityv1beta1.EnforcementSpec{ProtectedMetrics: patterns}}
 			expectRejected(budgetIn(namespace, spec), "protectedMetrics")
 		}
 	})
 
 	It("accepts valid protectedMetrics patterns", func() {
-		spec := cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
-			Enforcement: cardinalityv1alpha1.EnforcementSpec{ProtectedMetrics: []string{"up", "slo_.*", "^kube_.+$"}}}
+		spec := cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000,
+			Enforcement: cardinalityv1beta1.EnforcementSpec{ProtectedMetrics: []string{"up", "slo_.*", "^kube_.+$"}}}
 		expectAccepted(budgetIn(newTestNamespace(ctx), spec))
 	})
 })

@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 	"github.com/machani/cardinality-budget-operator/internal/usage"
 )
 
@@ -34,12 +34,12 @@ import (
 
 var t0 = time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
 
-func testBudget(mode cardinalityv1alpha1.BudgetMode) *cardinalityv1alpha1.CardinalityBudget {
-	return &cardinalityv1alpha1.CardinalityBudget{
+func testBudget(mode cardinalityv1beta1.BudgetMode) *cardinalityv1beta1.CardinalityBudget {
+	return &cardinalityv1beta1.CardinalityBudget{
 		ObjectMeta: metav1.ObjectMeta{Name: budgetName, Namespace: "payments", Generation: 3},
-		Spec: cardinalityv1alpha1.CardinalityBudgetSpec{
+		Spec: cardinalityv1beta1.CardinalityBudgetSpec{
 			MaxActiveSeries: 1000, WarnThresholdPercent: 90, Mode: mode,
-			Enforcement: cardinalityv1alpha1.EnforcementSpec{MaxMetricsToDrop: 2, MaxTotalDrops: 5},
+			Enforcement: cardinalityv1beta1.EnforcementSpec{MaxMetricsToDrop: 2, MaxTotalDrops: 5},
 		},
 	}
 }
@@ -55,43 +55,43 @@ func invalidAt(reason usage.InvalidReason, at time.Time) statusInput {
 }
 
 // step applies one measurement to the budget, like one reconcile, and returns the new status.
-func step(b *cardinalityv1alpha1.CardinalityBudget, in statusInput) cardinalityv1alpha1.CardinalityBudgetStatus {
+func step(b *cardinalityv1beta1.CardinalityBudget, in statusInput) cardinalityv1beta1.CardinalityBudgetStatus {
 	in.Budget = b
 	b.Status = computeStatus(in)
 	return b.Status
 }
 
-func condition(st cardinalityv1alpha1.CardinalityBudgetStatus, t string) *metav1.Condition {
+func condition(st cardinalityv1beta1.CardinalityBudgetStatus, t string) *metav1.Condition {
 	return meta.FindStatusCondition(st.Conditions, t)
 }
 
 func TestPhaseTransitions(t *testing.T) {
-	b := testBudget(cardinalityv1alpha1.ModeObserve)
+	b := testBudget(cardinalityv1beta1.ModeObserve)
 	for _, tc := range []struct {
 		series        int64
-		phase         cardinalityv1alpha1.BudgetPhase
+		phase         cardinalityv1beta1.BudgetPhase
 		exceeded      bool
 		exceededSince bool
 	}{
-		{500, cardinalityv1alpha1.PhaseHealthy, false, false},
-		{899, cardinalityv1alpha1.PhaseHealthy, false, false}, // 89.9% rounds down to 89
-		{900, cardinalityv1alpha1.PhaseWarning, false, false},
-		{1000, cardinalityv1alpha1.PhaseExceeded, true, true},
-		{1500, cardinalityv1alpha1.PhaseExceeded, true, true},
-		{800, cardinalityv1alpha1.PhaseHealthy, false, false},
+		{500, cardinalityv1beta1.PhaseHealthy, false, false},
+		{899, cardinalityv1beta1.PhaseHealthy, false, false}, // 89.9% rounds down to 89
+		{900, cardinalityv1beta1.PhaseWarning, false, false},
+		{1000, cardinalityv1beta1.PhaseExceeded, true, true},
+		{1500, cardinalityv1beta1.PhaseExceeded, true, true},
+		{800, cardinalityv1beta1.PhaseHealthy, false, false},
 	} {
 		st := step(b, measured(tc.series, t0))
 		if st.Phase != tc.phase {
 			t.Errorf("%d series: phase %s, want %s", tc.series, st.Phase, tc.phase)
 		}
-		if got := condition(st, cardinalityv1alpha1.ConditionBudgetExceeded).Status == metav1.ConditionTrue; got != tc.exceeded {
+		if got := condition(st, cardinalityv1beta1.ConditionBudgetExceeded).Status == metav1.ConditionTrue; got != tc.exceeded {
 			t.Errorf("%d series: BudgetExceeded %v, want %v", tc.series, got, tc.exceeded)
 		}
 		if (st.ExceededSince != nil) != tc.exceededSince {
 			t.Errorf("%d series: exceededSince %v", tc.series, st.ExceededSince)
 		}
-		if condition(st, cardinalityv1alpha1.ConditionReady).Reason != cardinalityv1alpha1.ReasonMeasurementValid {
-			t.Errorf("%d series: Ready reason %s", tc.series, condition(st, cardinalityv1alpha1.ConditionReady).Reason)
+		if condition(st, cardinalityv1beta1.ConditionReady).Reason != cardinalityv1beta1.ReasonMeasurementValid {
+			t.Errorf("%d series: Ready reason %s", tc.series, condition(st, cardinalityv1beta1.ConditionReady).Reason)
 		}
 		if st.ObservedGeneration != 3 {
 			t.Errorf("observedGeneration = %d", st.ObservedGeneration)
@@ -100,7 +100,7 @@ func TestPhaseTransitions(t *testing.T) {
 }
 
 func TestExceededSinceKeepsTheFirstTime(t *testing.T) {
-	b := testBudget(cardinalityv1alpha1.ModeObserve)
+	b := testBudget(cardinalityv1beta1.ModeObserve)
 	step(b, measured(1200, t0))
 	st := step(b, measured(1300, t0.Add(5*time.Minute)))
 	if !st.ExceededSince.Time.Equal(t0) {
@@ -109,8 +109,8 @@ func TestExceededSinceKeepsTheFirstTime(t *testing.T) {
 }
 
 func TestEmptyNamespaceIsZeroNotNil(t *testing.T) {
-	st := step(testBudget(cardinalityv1alpha1.ModeObserve), measured(0, t0))
-	if st.ActiveSeries == nil || *st.ActiveSeries != 0 || st.Phase != cardinalityv1alpha1.PhaseHealthy {
+	st := step(testBudget(cardinalityv1beta1.ModeObserve), measured(0, t0))
+	if st.ActiveSeries == nil || *st.ActiveSeries != 0 || st.Phase != cardinalityv1beta1.PhaseHealthy {
 		t.Errorf("status = %+v, want 0 series and Healthy", st)
 	}
 }
@@ -124,44 +124,44 @@ func TestInvalidMeasurementKeepsNumbersAndSetsUnknown(t *testing.T) {
 		{usage.BackendWarmingUp, metav1.ConditionFalse},
 		{usage.PartialData, metav1.ConditionTrue},
 	} {
-		b := testBudget(cardinalityv1alpha1.ModeWarn)
+		b := testBudget(cardinalityv1beta1.ModeWarn)
 		step(b, measured(1200, t0, usage.MetricCount{Name: "big", Series: 900}))
 		st := step(b, invalidAt(tc.reason, t0.Add(5*time.Minute)))
 
-		if st.Phase != cardinalityv1alpha1.PhaseUnknown || *st.ActiveSeries != 1200 || !st.LastMeasured.Time.Equal(t0) {
+		if st.Phase != cardinalityv1beta1.PhaseUnknown || *st.ActiveSeries != 1200 || !st.LastMeasured.Time.Equal(t0) {
 			t.Errorf("%s: phase %s, series %d, lastMeasured %v; want Unknown with the last valid numbers",
 				tc.reason, st.Phase, *st.ActiveSeries, st.LastMeasured)
 		}
 		if len(st.PlannedDrops) != 0 {
 			t.Errorf("%s: plannedDrops %v, want none while the measurement is invalid", tc.reason, st.PlannedDrops)
 		}
-		if r := condition(st, cardinalityv1alpha1.ConditionReady); r.Status != metav1.ConditionFalse || r.Reason != string(tc.reason) {
+		if r := condition(st, cardinalityv1beta1.ConditionReady); r.Status != metav1.ConditionFalse || r.Reason != string(tc.reason) {
 			t.Errorf("%s: Ready %s/%s", tc.reason, r.Status, r.Reason)
 		}
-		if got := condition(st, cardinalityv1alpha1.ConditionBackendReachable).Status; got != tc.reachable {
+		if got := condition(st, cardinalityv1beta1.ConditionBackendReachable).Status; got != tc.reachable {
 			t.Errorf("%s: BackendReachable %s, want %s", tc.reason, got, tc.reachable)
 		}
-		if st.ExceededSince == nil || condition(st, cardinalityv1alpha1.ConditionBudgetExceeded).Status != metav1.ConditionTrue {
+		if st.ExceededSince == nil || condition(st, cardinalityv1beta1.ConditionBudgetExceeded).Status != metav1.ConditionTrue {
 			t.Errorf("%s: exceeded state must stay as it was", tc.reason)
 		}
 	}
 }
 
 func TestStaleAfterMaxMeasurementAge(t *testing.T) {
-	b := testBudget(cardinalityv1alpha1.ModeObserve)
+	b := testBudget(cardinalityv1beta1.ModeObserve)
 	step(b, measured(100, t0))
 	st := step(b, invalidAt(usage.BackendUnreachable, t0.Add(11*time.Minute)))
-	if r := condition(st, cardinalityv1alpha1.ConditionReady); r.Reason != cardinalityv1alpha1.ReasonStale {
+	if r := condition(st, cardinalityv1beta1.ConditionReady); r.Reason != cardinalityv1beta1.ReasonStale {
 		t.Errorf("Ready reason = %s, want Stale", r.Reason)
 	}
-	if r := condition(st, cardinalityv1alpha1.ConditionBackendReachable); r.Reason != cardinalityv1alpha1.ReasonBackendUnreachable {
+	if r := condition(st, cardinalityv1beta1.ConditionBackendReachable); r.Reason != cardinalityv1beta1.ReasonBackendUnreachable {
 		t.Errorf("BackendReachable reason = %s, want the underlying cause", r.Reason)
 	}
 }
 
 func TestNeverMeasuredIsNotStale(t *testing.T) {
-	st := step(testBudget(cardinalityv1alpha1.ModeObserve), invalidAt(usage.BackendWarmingUp, t0))
-	if st.ActiveSeries != nil || condition(st, cardinalityv1alpha1.ConditionReady).Reason != cardinalityv1alpha1.ReasonBackendWarmingUp {
+	st := step(testBudget(cardinalityv1beta1.ModeObserve), invalidAt(usage.BackendWarmingUp, t0))
+	if st.ActiveSeries != nil || condition(st, cardinalityv1beta1.ConditionReady).Reason != cardinalityv1beta1.ReasonBackendWarmingUp {
 		t.Errorf("status = %+v, want no numbers and reason BackendWarmingUp", st)
 	}
 }
@@ -175,7 +175,7 @@ func TestPlannedDrops(t *testing.T) {
 		{Name: "uptime_seconds", Series: 500},     // not protected: "up" is anchored
 		{Name: "rpc_calls", Series: 400},
 	}
-	b := testBudget(cardinalityv1alpha1.ModeWarn)
+	b := testBudget(cardinalityv1beta1.ModeWarn)
 	b.Spec.Enforcement.ProtectedMetrics = []string{"up", "slo_.*"}
 
 	st := step(b, measured(1200, t0, top...))
@@ -183,7 +183,7 @@ func TestPlannedDrops(t *testing.T) {
 		t.Errorf("plannedDrops = %v, want %v (largest first, filtered, at most maxMetricsToDrop)", st.PlannedDrops, want)
 	}
 
-	b.Status.EnforcedDrops = []cardinalityv1alpha1.EnforcedDrop{
+	b.Status.EnforcedDrops = []cardinalityv1beta1.EnforcedDrop{
 		{Metric: "a"}, {Metric: "b"}, {Metric: "c"}, {Metric: "http_requests_total"},
 	}
 	st = step(b, measured(1200, t0, top...))
@@ -195,15 +195,15 @@ func TestPlannedDrops(t *testing.T) {
 func TestPlannedDropsByModeAndPhase(t *testing.T) {
 	top := []usage.MetricCount{{Name: "big", Series: 900}}
 	for _, tc := range []struct {
-		mode    cardinalityv1alpha1.BudgetMode
+		mode    cardinalityv1beta1.BudgetMode
 		series  int64
 		planned bool
 	}{
-		{cardinalityv1alpha1.ModeObserve, 1200, false},
-		{cardinalityv1alpha1.ModeWarn, 500, false},
-		{cardinalityv1alpha1.ModeWarn, 950, true},
-		{cardinalityv1alpha1.ModeWarn, 1200, true},
-		{cardinalityv1alpha1.ModeEnforce, 1200, true},
+		{cardinalityv1beta1.ModeObserve, 1200, false},
+		{cardinalityv1beta1.ModeWarn, 500, false},
+		{cardinalityv1beta1.ModeWarn, 950, true},
+		{cardinalityv1beta1.ModeWarn, 1200, true},
+		{cardinalityv1beta1.ModeEnforce, 1200, true},
 	} {
 		st := step(testBudget(tc.mode), measured(tc.series, t0, top...))
 		if got := len(st.PlannedDrops) > 0; got != tc.planned {
@@ -213,28 +213,28 @@ func TestPlannedDropsByModeAndPhase(t *testing.T) {
 }
 
 func TestInvalidProtectedPatternFreezesPlanning(t *testing.T) {
-	b := testBudget(cardinalityv1alpha1.ModeWarn)
+	b := testBudget(cardinalityv1beta1.ModeWarn)
 	b.Spec.Enforcement.ProtectedMetrics = []string{"slo_(.*"}
 	st := step(b, measured(1200, t0, usage.MetricCount{Name: "slo_latency", Series: 900}))
 
-	if r := condition(st, cardinalityv1alpha1.ConditionReady); r.Status != metav1.ConditionFalse || r.Reason != cardinalityv1alpha1.ReasonInvalidSpec {
+	if r := condition(st, cardinalityv1beta1.ConditionReady); r.Status != metav1.ConditionFalse || r.Reason != cardinalityv1beta1.ReasonInvalidSpec {
 		t.Errorf("Ready = %s/%s, want False/InvalidSpec", r.Status, r.Reason)
 	}
 	if len(st.PlannedDrops) != 0 {
 		t.Errorf("plannedDrops = %v, want none (fail closed)", st.PlannedDrops)
 	}
-	if st.Phase != cardinalityv1alpha1.PhaseExceeded || *st.ActiveSeries != 1200 {
+	if st.Phase != cardinalityv1beta1.PhaseExceeded || *st.ActiveSeries != 1200 {
 		t.Errorf("phase %s and usage must still update", st.Phase)
 	}
 	// InvalidSpec also wins over an invalid measurement.
 	st = step(b, invalidAt(usage.BackendUnreachable, t0.Add(time.Minute)))
-	if condition(st, cardinalityv1alpha1.ConditionReady).Reason != cardinalityv1alpha1.ReasonInvalidSpec {
+	if condition(st, cardinalityv1beta1.ConditionReady).Reason != cardinalityv1beta1.ReasonInvalidSpec {
 		t.Errorf("InvalidSpec must take precedence")
 	}
 }
 
 func TestStateEvents(t *testing.T) {
-	b := testBudget(cardinalityv1alpha1.ModeObserve)
+	b := testBudget(cardinalityv1beta1.ModeObserve)
 	var events []string
 	record := func(in statusInput) {
 		old := b.Status.DeepCopy()

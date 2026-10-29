@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // The API server (inside envtest) applies the +kubebuilder:default markers, so these tests check the
@@ -33,14 +33,14 @@ var _ = Describe("CardinalityBudget API defaults", func() {
 	ctx := context.Background()
 
 	It("fills every default when only maxActiveSeries is set", func() {
-		budget := budgetIn(newTestNamespace(ctx), cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000})
+		budget := budgetIn(newTestNamespace(ctx), cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 50000})
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, budget)).To(Succeed()) })
 
-		got := &cardinalityv1alpha1.CardinalityBudget{}
+		got := &cardinalityv1beta1.CardinalityBudget{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budgetName, Namespace: budget.Namespace}, got)).To(Succeed())
 
-		Expect(got.Spec.Mode).To(Equal(cardinalityv1alpha1.ModeObserve))
+		Expect(got.Spec.Mode).To(Equal(cardinalityv1beta1.ModeObserve))
 		Expect(got.Spec.WarnThresholdPercent).To(Equal(int32(90)))
 		Expect(got.Spec.Enforcement.GracePeriod.Duration).To(Equal(30 * time.Minute))
 		Expect(got.Spec.Enforcement.MaxMetricsToDrop).To(Equal(int32(1)))
@@ -53,11 +53,11 @@ var _ = Describe("CardinalityBudget API defaults", func() {
 		// Rejected objects are never stored, so all cases can share one namespace. Each case checks that
 		// the error names the field, so it is rejected for the right reason and not for its name.
 		namespace := newTestNamespace(ctx)
-		for field, spec := range map[string]cardinalityv1alpha1.CardinalityBudgetSpec{
+		for field, spec := range map[string]cardinalityv1beta1.CardinalityBudgetSpec{
 			"maxActiveSeries":      {MaxActiveSeries: 0},
 			"warnThresholdPercent": {MaxActiveSeries: 1, WarnThresholdPercent: 100},
 			"mode":                 {MaxActiveSeries: 1, Mode: "Delete"},
-			"maxTotalDrops": {MaxActiveSeries: 1, Enforcement: cardinalityv1alpha1.EnforcementSpec{
+			"maxTotalDrops": {MaxActiveSeries: 1, Enforcement: cardinalityv1beta1.EnforcementSpec{
 				MaxMetricsToDrop: 1, MaxTotalDrops: 11,
 			}},
 		} {

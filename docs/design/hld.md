@@ -62,10 +62,10 @@ The loop closes through the backend: enforcement changes scrape config, which lo
 
 ## API design
 
-The API is one namespaced kind, `CardinalityBudget`, starting at `v1alpha1`, in the API group `cardinality.telemetry-compass.com`. Each namespace has at most one budget, and it must be named `default` ([ADR 0004](../adr/0004-one-budget-per-namespace.md)).
+The API is one namespaced kind, `CardinalityBudget`, served as `v1beta1` (storage) and the deprecated `v1alpha1` with the same schema ([ADR 0017](../adr/0017-api-v1beta1.md)), in the API group `cardinality.telemetry-compass.com`. Each namespace has at most one budget, and it must be named `default` ([ADR 0004](../adr/0004-one-budget-per-namespace.md)).
 
 ```yaml
-apiVersion: cardinality.telemetry-compass.com/v1alpha1
+apiVersion: cardinality.telemetry-compass.com/v1beta1
 kind: CardinalityBudget
 metadata:
   name: default            # required name, one budget per namespace
@@ -268,7 +268,7 @@ V2 makes the operator production-shaped: pluggable backends and enforcement targ
 | Exhaustion forecast | Status shows projected time to budget exhaustion | Trend queries in the provider |
 | Cluster defaults | `ClusterCardinalityBudget` applies a default budget to namespaces by label selector | Cluster-scoped policy with namespaced overrides |
 | Generated alerts | A PrometheusRule per budget for Warn and Exceeded | Owned child resources and garbage collection |
-| API `v1beta1` | Pulled into v1.0 (see Production readiness). Conversion webhook from `v1alpha1`; validating webhook for cross-field rules | API versioning and webhooks |
+| API `v1beta1` | Done in v1.0 without schema changes, so without a webhook ([ADR 0017](../adr/0017-api-v1beta1.md)). A conversion webhook (cert-manager) comes with the first field change | API versioning and webhooks |
 
 ## Production readiness
 
@@ -280,7 +280,7 @@ The V1 feature set ships as production grade at v1.0; releases before it (v0.x) 
 | Fail-safe enforcement | Every rule in Safety rules, each covered by tests |
 | Auditability | Every drop recorded in `enforcedDrops`, as an Event, and as an annotation and label on the monitor, so it can be found and removed by hand |
 | Security | Least-privilege RBAC; teams read-only; credentials only from mounted files; non-root, read-only root filesystem, seccomp RuntimeDefault; NetworkPolicy; authenticated metrics endpoint; signed images, SBOM, vulnerability scan in CI |
-| API stability | API `v1beta1` with a conversion webhook from `v1alpha1` (pulled forward from V2); documented deprecation policy |
+| API stability | API `v1beta1`, same schema as `v1alpha1` (conversion `None`, [ADR 0017](../adr/0017-api-v1beta1.md)); `v1alpha1` deprecated, removed in v2.0; documented storage migration and deprecation policy |
 | Upgrades | Helm chart with CRDs upgraded explicitly (Helm does not upgrade CRDs in its `crds/` folder); semantic versioning; tested upgrade from the previous minor release |
 | Testing | Unit tests, envtest integration tests, end-to-end tests on kind in CI, failure tests (backend down, leader failover mid-step, reverts), and scale tests on the hardware cluster |
 | Compatibility | Published matrix following the support policy below |
