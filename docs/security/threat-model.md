@@ -47,8 +47,10 @@ Not granted: Secrets, ConfigMaps, Prometheus objects, any cluster-scoped write.
 ## Known gaps
 
 - The operator's own ServiceMonitor uses `insecureSkipVerify` for the metrics certificate (scaffold default).
-  Production should use cert-manager certificates (`config/prometheus/monitor_tls_patch.yaml`); planned with the
-  v1.0 webhook certificates.
-- No image signing or SBOM yet (F-1002, v1.0).
+  Production should use cert-manager certificates (Helm `certManager.enabled`, Kustomize
+  `config/prometheus/monitor_tls_patch.yaml`). Exception E3 in the [readiness review](../readiness-review.md);
+  v1.0 has no webhook, so no other certificates exist ([ADR 0017](../adr/0017-api-v1beta1.md)).
+- Images and charts are signed (cosign keyless) with an SBOM and provenance from v1.0
+  ([ADR 0018](../adr/0018-release-pipeline.md)).
 - NetworkPolicy covers ingress only; egress to Prometheus and the API server is not restricted, because their
   addresses differ per cluster.
