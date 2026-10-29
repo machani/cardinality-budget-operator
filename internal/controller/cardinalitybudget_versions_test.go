@@ -83,8 +83,8 @@ var _ = Describe("CardinalityBudget API versions", func() {
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, budget)).To(Succeed()) })
 
 		budget.Status.Phase = cardinalityv1beta1.PhaseExceeded
-		budget.Status.ActiveSeries = ptr.To(int64(120))
-		budget.Status.UsagePercent = ptr.To(int32(120))
+		budget.Status.ActiveSeries = ptr.To[int64](120)
+		budget.Status.UsagePercent = ptr.To[int32](120)
 		budget.Status.TopMetrics = []cardinalityv1beta1.MetricUsage{{Name: "http.requests", Series: 90}}
 		Expect(k8sClient.Status().Update(ctx, budget)).To(Succeed())
 
