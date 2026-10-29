@@ -1,0 +1,217 @@
+name: Release
+
+# F-1002, ADR 0018: a vX.Y.Z tag on main builds, scans, publishes and signs the image, the SBOM, the chart and
+# install.yaml, then creates the GitHub release. A manual run is a dry run (see the version step).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  CHART_REPO: oci://ghcr.io/${{ github.repository_owner }}/charts
+  # Signatures must come from this workflow in this repository.
+  CERT_IDENTITY: ^https://github\.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/(tags/v.*|heads/.*)$
+  CERT_ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # GitHub release
+      packages: write # push to ghcr.io
+      id-token: write # keyless signing
+      attestations: write # build provenance
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            if ! [[ "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+              echo "::error::Tag $REF_NAME is not vX.Y.Z or vX.Y.Z-rc.N"; exit 1
+            fi
+            version=${REF_NAME#v}
+            git fetch --no-tags origin main
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Tag $REF_NAME does not point at a commit on main"; exit 1
+            fi
+            # The notes are the CHANGELOG section of this version, without its heading.
+            awk -v v="$version" '
+              index($0, "## [" v "]") == 1 { found = 1; next }
+              found && /^## \[/ { exit }
+              found { print }' CHANGELOG.md > release-notes.md
+            if ! grep -q '[^[:space:]]' release-notes.md; then
+              echo "::error::CHANGELOG.md has no section ## [$version]"; exit 1
+            fi
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            version="0.0.0-dryrun.$RUN_NUMBER"
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the amd64 image for scanning
+        run: docker buildx build --platform linux/amd64 --load -t cardinality-budget-operator:scan .
+
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: cardinality-budget-operator:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push linux/amd64 and linux/arm64
+        id: image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version="$VERSION" \
+            --label org.opencontainers.image.licenses=Apache-2.0 \
+            --metadata-file image-metadata.json \
+            -t "$IMAGE:$VERSION" .
+          digest=$(jq -r '."containerimage.digest"' image-metadata.json)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE:$VERSION@$digest"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+
+      - name: Make the SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.image.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attach the SBOM as a signed attestation
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$IMAGE@$DIGEST"
+
+      - name: Attach build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify the signature and the SBOM attestation
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          cosign verify "$IMAGE@$DIGEST" \
+            --certificate-identity-regexp "$CERT_IDENTITY" --certificate-oidc-issuer "$CERT_ISSUER" >/dev/null
+          cosign verify-attestation "$IMAGE@$DIGEST" --type spdxjson \
+            --certificate-identity-regexp "$CERT_IDENTITY" --certificate-oidc-issuer "$CERT_ISSUER" >/dev/null
+          echo "Signature and SBOM attestation verified"
+
+      - name: Build install.yaml
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        # Pinned by digest, so the manifest always runs the image that was signed.
+        run: make build-installer IMG="$IMAGE:$VERSION@$DIGEST"
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Package the chart
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        # The generated chart points at "controller"; the tag defaults to the chart's appVersion.
+        run: |
+          sed -i "s#^    repository: controller\$#    repository: $IMAGE#" dist/chart/values.yaml
+          grep -q "repository: $IMAGE" dist/chart/values.yaml
+          helm lint dist/chart
+          helm package dist/chart --version "$VERSION" --app-version "$VERSION"
+
+      - name: Keep the dry-run files
+        if: steps.version.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dry-run-${{ steps.version.outputs.version }}
+          path: |
+            sbom.spdx.json
+            dist/install.yaml
+            cardinality-budget-operator-*.tgz
+
+      - name: Push and sign the chart
+        if: steps.version.outputs.dry_run == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GITHUB_TOKEN"
+          helm push "cardinality-budget-operator-$VERSION.tgz" "$CHART_REPO" 2>&1 | tee helm-push.log
+          digest=$(awk '/^Digest:/ {print $2}' helm-push.log)
+          test -n "$digest"
+          cosign sign --yes "${CHART_REPO#oci://}/cardinality-budget-operator@$digest"
+
+      - name: Create the GitHub release
+        if: steps.version.outputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          {
+            cat release-notes.md
+            echo
+            echo "## Artifacts"
+            echo
+            echo "- Image: \`$IMAGE:$VERSION\` (\`$DIGEST\`), linux/amd64 and linux/arm64"
+            echo "- Chart: \`$CHART_REPO/cardinality-budget-operator --version $VERSION\`"
+            echo "- Verify: see [docs/releasing.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/releasing.md#verify-a-release)"
+          } > release-body.md
+          prerelease=()
+          [[ "$VERSION" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release-body.md "${prerelease[@]}" \
+            dist/install.yaml sbom.spdx.json "cardinality-budget-operator-$VERSION.tgz"

@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: read
     # F-0306: build for both supported platforms (ADR 0011: linux/amd64, linux/arm64) and scan the image.
-    # Nothing is pushed; publishing is the v1.0 release pipeline (F-1002).
+    # Nothing is pushed; releases publish through release.yml (F-1002, ADR 0018).
     name: Multi-arch build and scan
     runs-on: ubuntu-latest
     steps:
