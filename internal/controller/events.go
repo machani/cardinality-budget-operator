@@ -25,7 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // eventActionMeasure is the events.k8s.io "action" of every measurement Event.
@@ -48,14 +48,14 @@ type budgetEvent struct {
 // plus the Ready reason, so a budget emits one Event when it goes from Healthy to Warning, and one when
 // the backend goes from warming up to unreachable, but none on every unchanged measurement. Every mode
 // emits these Events (ADR 0015).
-func stateEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budgetEvent {
+func stateEvent(old, updated *cardinalityv1beta1.CardinalityBudgetStatus) *budgetEvent {
 	oldReason, newReason := readyReason(old), readyReason(updated)
 	if old.Phase == updated.Phase && oldReason == newReason {
 		return nil
 	}
 
-	if ready := meta.FindStatusCondition(updated.Conditions, cardinalityv1alpha1.ConditionReady); ready != nil &&
-		ready.Reason != cardinalityv1alpha1.ReasonMeasurementValid {
+	if ready := meta.FindStatusCondition(updated.Conditions, cardinalityv1beta1.ConditionReady); ready != nil &&
+		ready.Reason != cardinalityv1beta1.ReasonMeasurementValid {
 		return &budgetEvent{Type: corev1.EventTypeWarning, Reason: ready.Reason,
 			Note: fmt.Sprintf("Budget is %s: %s", updated.Phase, ready.Message)}
 	}
@@ -65,7 +65,7 @@ func stateEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budg
 		usage = fmt.Sprintf(": %d series, %d%% of the budget", *updated.ActiveSeries, *updated.UsagePercent)
 	}
 	eventType := corev1.EventTypeWarning
-	if updated.Phase == cardinalityv1alpha1.PhaseHealthy {
+	if updated.Phase == cardinalityv1beta1.PhaseHealthy {
 		eventType = corev1.EventTypeNormal
 	}
 	return &budgetEvent{Type: eventType, Reason: "Budget" + string(updated.Phase),
@@ -134,14 +134,14 @@ func truncateNote(note string) string {
 
 // enforcedEvent returns an Event when the Enforced condition changes to Paused (kill switch) or
 // LimitReached. Drops, restores and pauses already record their own Event where they happen.
-func enforcedEvent(old, updated *cardinalityv1alpha1.CardinalityBudgetStatus) *budgetEvent {
-	before := meta.FindStatusCondition(old.Conditions, cardinalityv1alpha1.ConditionEnforced)
-	after := meta.FindStatusCondition(updated.Conditions, cardinalityv1alpha1.ConditionEnforced)
+func enforcedEvent(old, updated *cardinalityv1beta1.CardinalityBudgetStatus) *budgetEvent {
+	before := meta.FindStatusCondition(old.Conditions, cardinalityv1beta1.ConditionEnforced)
+	after := meta.FindStatusCondition(updated.Conditions, cardinalityv1beta1.ConditionEnforced)
 	if after == nil || (before != nil && before.Reason == after.Reason) {
 		return nil
 	}
 	switch after.Reason {
-	case cardinalityv1alpha1.ReasonPaused, cardinalityv1alpha1.ReasonLimitReached, cardinalityv1alpha1.ReasonRateLimited:
+	case cardinalityv1beta1.ReasonPaused, cardinalityv1beta1.ReasonLimitReached, cardinalityv1beta1.ReasonRateLimited:
 	default:
 		return nil
 	}

@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // ErrKillSwitch is returned for every monitor write while --enforcement-paused is on (ADR 0010).
@@ -72,5 +72,5 @@ func List(ctx context.Context, c client.Reader, namespace string, selector label
 
 // ListOwned returns the namespace's monitors carrying the enforced label, selected or not.
 func ListOwned(ctx context.Context, c client.Reader, namespace string) ([]Monitor, error) {
-	return List(ctx, c, namespace, labels.SelectorFromSet(labels.Set{cardinalityv1alpha1.EnforcedLabel: "true"}))
+	return List(ctx, c, namespace, labels.SelectorFromSet(labels.Set{cardinalityv1beta1.EnforcedLabel: "true"}))
 }

@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 )
 
 // These tests check the status subresource: status is written through its own endpoint, and a normal
@@ -33,15 +33,15 @@ import (
 var _ = Describe("CardinalityBudget status subresource", func() {
 	ctx := context.Background()
 
-	newBudget := func() *cardinalityv1alpha1.CardinalityBudget {
-		budget := budgetIn(newTestNamespace(ctx), cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 50000})
+	newBudget := func() *cardinalityv1beta1.CardinalityBudget {
+		budget := budgetIn(newTestNamespace(ctx), cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 50000})
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, budget)).To(Succeed()) })
 		return budget
 	}
 
-	get := func(budget *cardinalityv1alpha1.CardinalityBudget) *cardinalityv1alpha1.CardinalityBudget {
-		got := &cardinalityv1alpha1.CardinalityBudget{}
+	get := func(budget *cardinalityv1beta1.CardinalityBudget) *cardinalityv1beta1.CardinalityBudget {
+		got := &cardinalityv1beta1.CardinalityBudget{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: budget.Name, Namespace: budget.Namespace}, got)).To(Succeed())
 		return got
 	}
@@ -49,32 +49,32 @@ var _ = Describe("CardinalityBudget status subresource", func() {
 	It("stores every status field written through the status endpoint", func() {
 		budget := newBudget()
 		now := metav1.Now()
-		budget.Status = cardinalityv1alpha1.CardinalityBudgetStatus{
+		budget.Status = cardinalityv1beta1.CardinalityBudgetStatus{
 			ObservedGeneration: budget.Generation,
-			Phase:              cardinalityv1alpha1.PhaseEnforcing,
+			Phase:              cardinalityv1beta1.PhaseEnforcing,
 			ActiveSeries:       ptr.To[int64](61230),
 			UsagePercent:       ptr.To[int32](122),
 			LastMeasured:       &now,
-			TopMetrics:         []cardinalityv1alpha1.MetricUsage{{Name: "http_request_duration_seconds_bucket", Series: 18400}},
+			TopMetrics:         []cardinalityv1beta1.MetricUsage{{Name: "http_request_duration_seconds_bucket", Series: 18400}},
 			PlannedDrops:       []string{"http_requests_total"},
-			EnforcedDrops: []cardinalityv1alpha1.EnforcedDrop{{
+			EnforcedDrops: []cardinalityv1beta1.EnforcedDrop{{
 				Metric: "http_request_duration_seconds_bucket", MonitorCount: 4, Since: now,
-				State: cardinalityv1alpha1.DropEffective,
+				State: cardinalityv1beta1.DropEffective,
 			}},
 		}
 		Expect(k8sClient.Status().Update(ctx, budget)).To(Succeed())
 
 		got := get(budget)
-		Expect(got.Status.Phase).To(Equal(cardinalityv1alpha1.PhaseEnforcing))
+		Expect(got.Status.Phase).To(Equal(cardinalityv1beta1.PhaseEnforcing))
 		Expect(*got.Status.ActiveSeries).To(Equal(int64(61230)))
 		Expect(*got.Status.UsagePercent).To(Equal(int32(122)))
 		Expect(got.Status.TopMetrics).To(HaveLen(1))
-		Expect(got.Status.EnforcedDrops[0].State).To(Equal(cardinalityv1alpha1.DropEffective))
+		Expect(got.Status.EnforcedDrops[0].State).To(Equal(cardinalityv1beta1.DropEffective))
 	})
 
 	It("ignores status changes sent with a normal update", func() {
 		budget := newBudget()
-		budget.Status.Phase = cardinalityv1alpha1.PhaseExceeded
+		budget.Status.Phase = cardinalityv1beta1.PhaseExceeded
 		Expect(k8sClient.Update(ctx, budget)).To(Succeed())
 
 		Expect(get(budget).Status.Phase).To(BeEmpty())

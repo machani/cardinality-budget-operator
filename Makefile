@@ -113,7 +113,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Verify
 
 .PHONY: verify
-verify: verify-tidy verify-generated verify-license ## Run the repository checks CI runs (tidy, generated files, license headers).
+verify: verify-tidy verify-generated verify-license verify-compat ## Run the repository checks CI runs (tidy, generated files, license headers, compatibility matrix).
 
 .PHONY: verify-tidy
 verify-tidy: ## Fail if go.mod or go.sum are not tidy.
@@ -127,6 +127,10 @@ verify-generated: manifests generate ## Fail if generated code or manifests are 
 	@if [ -n "$$(git status --porcelain -- api config)" ]; then \
 		echo "Generated files are out of date; run 'make manifests generate' and commit:"; git status --porcelain -- api config; exit 1; \
 	fi
+
+.PHONY: verify-compat
+verify-compat: ## Fail if docs/compatibility.md misses a version tested in CI (F-1003).
+	bash hack/ci/check-compat.sh
 
 .PHONY: verify-license
 verify-license: ## Fail if a Go file lacks the Apache-2.0 license header.

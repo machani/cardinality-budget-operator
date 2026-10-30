@@ -22,6 +22,8 @@ import (
 )
 
 // After changing this file, run `make manifests generate` (never edit the generated files).
+// v1alpha1 is deprecated and removed in v2.0 (ADR 0017). Keep it identical to v1beta1: change both or neither.
+// Shared constants (conditions, names) live in v1beta1.
 // Defaults and ranges: HLD "API design", ADR 0006 (maxTotalDrops), ADR 0014 (other defaults).
 
 // BudgetMode is how far the operator may act on a budget.
@@ -234,6 +236,7 @@ type CardinalityBudgetStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion:warning="cardinality.telemetry-compass.com/v1alpha1 CardinalityBudget is deprecated and will be removed in v2.0; use v1beta1"
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=cb
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="a CardinalityBudget must be named 'default' (one per namespace, ADR 0004)"

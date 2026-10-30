@@ -98,5 +98,6 @@ Status as of 2026-10-19. Build tracker with feature IDs: [docs/features](../feat
 ## Planned
 
 - v0.3: scale tests on a larger cluster (blocked).
-- v1.0: API `v1beta1` with conversion webhook, release pipeline (signed images, SBOM, CHANGELOG), published
-  compatibility matrix, full documentation (install, user, admin, GitOps), production readiness review.
+- v1.0 (in progress): API `v1beta1` with the `v1alpha1` schema, no webhook ([ADR 0017](../adr/0017-api-v1beta1.md));
+  release pipeline with signed images, SBOM and CHANGELOG ([ADR 0018](../adr/0018-release-pipeline.md));
+  [compatibility matrix](../compatibility.md); [guides](../guides/); [readiness review](../readiness-review.md).

@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 	"github.com/machani/cardinality-budget-operator/internal/testutil"
 	"github.com/machani/cardinality-budget-operator/internal/usage"
 )
@@ -62,17 +62,17 @@ var _ = Describe("CardinalityBudget reconcile", func() {
 		}
 	})
 
-	create := func(spec cardinalityv1alpha1.CardinalityBudgetSpec) *cardinalityv1alpha1.CardinalityBudget {
+	create := func(spec cardinalityv1beta1.CardinalityBudgetSpec) *cardinalityv1beta1.CardinalityBudget {
 		budget := budgetIn(newTestNamespace(ctx), spec)
 		Expect(k8sClient.Create(ctx, budget)).To(Succeed())
 		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, budget))).To(Succeed()) })
 		return budget
 	}
 
-	reconcileOnce := func(budget *cardinalityv1alpha1.CardinalityBudget) (reconcile.Result, *cardinalityv1alpha1.CardinalityBudget) {
+	reconcileOnce := func(budget *cardinalityv1beta1.CardinalityBudget) (reconcile.Result, *cardinalityv1beta1.CardinalityBudget) {
 		result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(budget)})
 		Expect(err).NotTo(HaveOccurred())
-		got := &cardinalityv1alpha1.CardinalityBudget{}
+		got := &cardinalityv1beta1.CardinalityBudget{}
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(budget), got)).To(Succeed())
 		return result, got
 	}
@@ -95,16 +95,16 @@ var _ = Describe("CardinalityBudget reconcile", func() {
 	}
 
 	It("moves through Healthy, Warning, Exceeded and back, with one Event per change", func() {
-		budget := create(cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
+		budget := create(cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
 		for _, step := range []struct {
 			series float64
-			phase  cardinalityv1alpha1.BudgetPhase
+			phase  cardinalityv1beta1.BudgetPhase
 		}{
-			{100, cardinalityv1alpha1.PhaseHealthy},
-			{150, cardinalityv1alpha1.PhaseHealthy},
-			{950, cardinalityv1alpha1.PhaseWarning},
-			{1200, cardinalityv1alpha1.PhaseExceeded},
-			{100, cardinalityv1alpha1.PhaseHealthy},
+			{100, cardinalityv1beta1.PhaseHealthy},
+			{150, cardinalityv1beta1.PhaseHealthy},
+			{950, cardinalityv1beta1.PhaseWarning},
+			{1200, cardinalityv1beta1.PhaseExceeded},
+			{100, cardinalityv1beta1.PhaseHealthy},
 		} {
 			setUsage(budget.Namespace, step.series)
 			_, got := reconcileOnce(budget)
@@ -122,33 +122,33 @@ var _ = Describe("CardinalityBudget reconcile", func() {
 	})
 
 	It("requeues after about the measure interval", func() {
-		budget := create(cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
+		budget := create(cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
 		result, _ := reconcileOnce(budget)
 		Expect(result.RequeueAfter).To(BeNumerically("~", 5*time.Minute, 30*time.Second))
 	})
 
 	It("reports Unknown and keeps the last numbers when Prometheus fails", func() {
-		budget := create(cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
+		budget := create(cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
 		setUsage(budget.Namespace, 400)
 		reconcileOnce(budget)
 
 		fake.SetQueryError(http.StatusServiceUnavailable, "overloaded")
 		result, got := reconcileOnce(budget)
 
-		Expect(got.Status.Phase).To(Equal(cardinalityv1alpha1.PhaseUnknown))
+		Expect(got.Status.Phase).To(Equal(cardinalityv1beta1.PhaseUnknown))
 		Expect(*got.Status.ActiveSeries).To(Equal(int64(400)))
-		ready := meta.FindStatusCondition(got.Status.Conditions, cardinalityv1alpha1.ConditionReady)
-		Expect(ready.Reason).To(Equal(cardinalityv1alpha1.ReasonBackendUnreachable))
+		ready := meta.FindStatusCondition(got.Status.Conditions, cardinalityv1beta1.ConditionReady)
+		Expect(ready.Reason).To(Equal(cardinalityv1beta1.ReasonBackendUnreachable))
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "an invalid measurement is retried on the timer, not as an error")
 	})
 
 	It("reports warming up right after a Prometheus restart", func() {
-		budget := create(cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
+		budget := create(cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000})
 		fake.SetRuntimeInfo(time.Now().Add(-time.Minute), true, time.Now())
 		_, got := reconcileOnce(budget)
-		Expect(got.Status.Phase).To(Equal(cardinalityv1alpha1.PhaseUnknown))
-		Expect(meta.FindStatusCondition(got.Status.Conditions, cardinalityv1alpha1.ConditionReady).Reason).
-			To(Equal(cardinalityv1alpha1.ReasonBackendWarmingUp))
+		Expect(got.Status.Phase).To(Equal(cardinalityv1beta1.PhaseUnknown))
+		Expect(meta.FindStatusCondition(got.Status.Conditions, cardinalityv1beta1.ConditionReady).Reason).
+			To(Equal(cardinalityv1beta1.ReasonBackendWarmingUp))
 		Expect(got.Status.ActiveSeries).To(BeNil(), "never measured, so no numbers")
 	})
 
@@ -157,12 +157,12 @@ var _ = Describe("CardinalityBudget reconcile", func() {
 			{Labels: map[string]string{"__name__": "http_requests_total"}, Value: 700},
 			{Labels: map[string]string{"__name__": "up"}, Value: 600},
 		}
-		for _, mode := range []cardinalityv1alpha1.BudgetMode{cardinalityv1alpha1.ModeObserve, cardinalityv1alpha1.ModeWarn} {
-			budget := create(cardinalityv1alpha1.CardinalityBudgetSpec{MaxActiveSeries: 1000, Mode: mode,
-				Enforcement: cardinalityv1alpha1.EnforcementSpec{ProtectedMetrics: []string{"up"}}})
+		for _, mode := range []cardinalityv1beta1.BudgetMode{cardinalityv1beta1.ModeObserve, cardinalityv1beta1.ModeWarn} {
+			budget := create(cardinalityv1beta1.CardinalityBudgetSpec{MaxActiveSeries: 1000, Mode: mode,
+				Enforcement: cardinalityv1beta1.EnforcementSpec{ProtectedMetrics: []string{"up"}}})
 			setUsage(budget.Namespace, 1200, top...)
 			_, got := reconcileOnce(budget)
-			if mode == cardinalityv1alpha1.ModeObserve {
+			if mode == cardinalityv1beta1.ModeObserve {
 				Expect(got.Status.PlannedDrops).To(BeEmpty())
 			} else {
 				Expect(got.Status.PlannedDrops).To(Equal([]string{"http_requests_total"}))

@@ -4,7 +4,7 @@ Per-namespace Prometheus series budgets for Kubernetes: measure each namespace's
 `CardinalityBudget` resource, and, when asked, cut the biggest metrics gradually and reversibly through the
 namespace's own ServiceMonitors and PodMonitors.
 
-> **Status: alpha (v0.3).** Observe, Warn and Enforce modes work and are tested in CI. Enforce deletes data on
+> **Status: alpha (v0.3), v1.0 in progress.** Observe, Warn and Enforce modes work and are tested in CI. Enforce deletes data on
 > purpose, so run v0.x on lab clusters only. Production readiness is the v1.0 goal. No images are published
 > yet; build your own (see [Install](#install)).
 
@@ -51,7 +51,7 @@ flowchart LR
 ## Example
 
 ```yaml
-apiVersion: cardinality.telemetry-compass.com/v1alpha1
+apiVersion: cardinality.telemetry-compass.com/v1beta1
 kind: CardinalityBudget
 metadata:
   name: default
@@ -211,6 +211,11 @@ The full lab walkthrough (upgrade, failover, drift, kill switch, alerts) is in
 | | |
 | --- | --- |
 | [Overview](docs/overview/README.md) | Start here: introduction, capabilities, how it works, FAQ |
+| Guides | [Install](docs/guides/install.md), [user](docs/guides/user.md), [admin](docs/guides/admin.md), [GitOps](docs/guides/gitops.md) |
+| [Compatibility](docs/compatibility.md) | Tested Kubernetes, Prometheus Operator and Prometheus versions |
+| [Releasing](docs/releasing.md) | Cutting a release; verifying signatures, SBOM and provenance |
+| [Deprecation policy](docs/deprecation-policy.md) and [CHANGELOG](CHANGELOG.md) | What may change between releases, and what did |
+| [Security policy](SECURITY.md) | Reporting vulnerabilities |
 | [Design](docs/design/hld.md) | High-level design, API, reconcile loop |
 | [Decisions](docs/adr/README.md) | Architecture decision records |
 | [Feature tracker](docs/features/README.md) | Milestones v0.1 to v1.0 and their status |
@@ -232,8 +237,8 @@ checks tidy modules, generated files and license headers. After changing `api/` 
 - **v0.1** Observe and Warn: done
 - **v0.2** Enforce: done
 - **v0.3** Hardening (HA, security, rate limit, Helm, CI matrix): done (scale tests pending)
-- **v1.0** API `v1beta1` with conversion webhook, signed releases with SBOM, full documentation, production
-  readiness review
+- **v1.0** API `v1beta1`, signed releases with SBOM, full documentation, production readiness review: in
+  progress
 
 ## License
 

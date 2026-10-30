@@ -95,7 +95,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           kubectl create namespace chart-check
-          kubectl -n chart-check apply -f config/samples/cardinality_v1alpha1_cardinalitybudget.yaml
+          kubectl -n chart-check apply -f config/samples/cardinality_v1beta1_cardinalitybudget.yaml
 
       - name: Uninstall keeps the CRD and the budget
         if: steps.changes.outputs.docs_only != 'true'

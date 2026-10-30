@@ -36,7 +36,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	cardinalityv1alpha1 "github.com/machani/cardinality-budget-operator/api/v1alpha1"
+	cardinalityv1beta1 "github.com/machani/cardinality-budget-operator/api/v1beta1"
 	"github.com/machani/cardinality-budget-operator/internal/config"
 	"github.com/machani/cardinality-budget-operator/internal/controller"
 	operatormetrics "github.com/machani/cardinality-budget-operator/internal/metrics"
@@ -52,7 +52,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(cardinalityv1alpha1.AddToScheme(scheme))
+	// Only v1beta1: it is the storage version, and v1alpha1 has the same schema (ADR 0017).
+	utilruntime.Must(cardinalityv1beta1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }

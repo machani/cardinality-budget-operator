@@ -26,7 +26,7 @@ demo        default   Warning   1012     1100    92        Warn   3m
 ## The resource
 
 ```yaml
-apiVersion: cardinality.telemetry-compass.com/v1alpha1
+apiVersion: cardinality.telemetry-compass.com/v1beta1
 kind: CardinalityBudget
 metadata:
   name: default          # always "default": one budget per namespace
@@ -93,6 +93,6 @@ churn budgets, forecasting, team-editable budgets.
 ## Status
 
 Alpha (v0.3). v0.1 (Observe and Warn), v0.2 (Enforce) and v0.3 (hardening) are done and verified on a lab
-cluster; scale tests are still open. v1.0 (API v1beta1, release pipeline, full docs) is next. Run v0.x on lab clusters only.
+cluster; scale tests are still open. v1.0 (API v1beta1, release pipeline, full docs) is in progress. Run v0.x on lab clusters only.
 
 Next: [capabilities](capabilities.md), [how it works](how-it-works.md), [FAQ](faq.md). Design: [HLD](../design/hld.md); decisions: [ADRs](../adr/README.md).
