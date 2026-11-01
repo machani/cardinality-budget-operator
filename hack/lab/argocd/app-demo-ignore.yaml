@@ -1,4 +1,5 @@
-# verify-v1.0.md 3d: app-demo.yaml plus the ignoreDifferences block from docs/guides/gitops.md, unchanged.
+# verify-v1.0.md 3d: app-demo.yaml plus the ignoreDifferences block the GitOps guide recommended before
+# ADR 0019. The lab showed it does not keep the drop rule through a sync.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

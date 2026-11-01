@@ -60,6 +60,7 @@ Several situations need a person before enforcement continues: ineffective drops
 
 - Argo CD `ignoreDifferences` for `metricRelabelings`, the label and the annotation; Flux
   `kustomize.toolkit.fluxcd.io/ssa` annotation options. Both verified in the lab before documenting.
+  (Refined by [ADR 0019](0019-gitops-managed-monitors.md): the lab found that no Argo CD option keeps the rule.)
 
 ## Consequences
 

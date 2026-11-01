@@ -49,8 +49,9 @@ The budget is `Unknown`. `Ready` says why: `BackendUnreachable`, `BackendWarming
 
 The `Enforced` reason tells why. A paused budget adds no drops; restores still run (ADR 0008).
 
-- `Reverted`: someone removed an owned drop rule, often a GitOps tool. Fix the source (ignore the
-  `metricRelabelings` drift in Argo CD / Flux, or add the drop to Git), then resume.
+- `Reverted`: someone removed an owned drop rule, often a GitOps sync of the monitor (no Argo CD setting
+  prevents it). Add the drop to the team's monitor in Git, then resume; for namespaces synced from Git, consider
+  Warn mode ([GitOps guide](../guides/gitops.md)).
 - `Ineffective`: the drop left more than 10% of the metric's series; they come from outside the selected
   monitors (Pushgateway, ScrapeConfig, other monitors). Narrow `monitorSelector` or protect the metric, then resume.
 - `ConfigReloadFailed`: see below.
@@ -135,5 +136,5 @@ v1.0 serves `v1beta1` (stored) and the deprecated `v1alpha1` with the same schem
    kubectl apply set-last-applied -f budget.yaml && kubectl apply -f budget.yaml
    ```
 
-   Server-side apply (`kubectl apply --server-side`, Flux) does not use that annotation. For Argo CD, see the
-   [GitOps guide](../guides/gitops.md#budgets-in-git).
+   Server-side apply (`kubectl apply --server-side`, Flux) does not use that annotation. Argo CD v3.5 syncs the
+   change without this step, with or without `ServerSideApply=true` (tested in the lab).

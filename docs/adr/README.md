@@ -30,3 +30,4 @@ Rules:
 | [0016](0016-enforcement-details.md) | Enforcement details: effectiveness baseline, restore step, ownership edge cases | Accepted |
 | [0017](0017-api-v1beta1.md) | API v1beta1 without a conversion webhook | Accepted |
 | [0018](0018-release-pipeline.md) | Release pipeline: ghcr.io, keyless signing, SBOM, CHANGELOG | Accepted |
+| [0019](0019-gitops-managed-monitors.md) | Monitors synced by GitOps tools: a documented limit in v1 (refines 0008) | Accepted |

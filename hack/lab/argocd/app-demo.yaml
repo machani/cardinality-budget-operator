@@ -1,4 +1,4 @@
-# verify-v1.0.md 3b/3c: the demo workload and its ServiceMonitor from Git, self-heal on, no ignoreDifferences.
+# verify-v1.0.md 3b and 3c: the demo workload and its ServiceMonitor from Git, self-heal on, no ignoreDifferences.
 # No resources finalizer: deleting the Application leaves the demo objects in place.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

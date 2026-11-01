@@ -324,6 +324,7 @@ Every new idea lands here first with a target release; once accepted, it moves i
 
 | Date | Idea | Release | Status |
 | --- | --- | --- | --- |
+| 2026-11-01 | Keep drops through GitOps syncs of monitors (ADR 0019): for example Argo CD `managedFieldsManagers`, or drop rules outside the team's monitor | V2 | Proposed |
 | 2026-10-04 | Kill switch through a watched ConfigMap instead of a flag (no rollout needed) | Backlog | Proposed |
 | 2026-10-04 | Report excluded infrastructure series in `status.infrastructureSeries` | Backlog | Proposed |
 | 2026-10-04 | Operator checks the Prometheus CR for `enforcedNamespaceLabel` and warns if missing | Backlog | Proposed |
@@ -340,7 +341,7 @@ The biggest risk is acting on wrong data or against GitOps; the design answers b
 
 | Risk | Mitigation |
 | --- | --- |
-| Argo CD or Flux reverts drop rules, causing a patch loop | V1 detects reverts, never re-applies, pauses the budget; GitOps guide documents `ignoreDifferences` and Flux options ([ADR 0008](../adr/0008-drift-pause-and-resume.md)) |
+| Argo CD or Flux reverts drop rules, causing a patch loop | V1 detects reverts, never re-applies, pauses the budget ([ADR 0008](../adr/0008-drift-pause-and-resume.md)). Every sync of a monitor removes the drops (atomic `endpoints` list), so in namespaces whose monitors a GitOps tool syncs, Enforce lasts until the next sync; the GitOps guide recommends Warn mode or moving drops into Git ([ADR 0019](../adr/0019-gitops-managed-monitors.md)) |
 | Dropping a metric that dashboards or alerts depend on | `protectedMetrics`, `maxMetricsToDrop`, `maxTotalDrops`, grace period, Warn-mode dry run |
 | A monitor excluded from `enforcedNamespaceLabel` (e.g. the API server, in `default`) counts against its targets' namespace | Default `--exclude-series` covers the kube-prometheus-stack jobs; documented rule: every excluded monitor's job must be in the flag ([ADR 0013](../adr/0013-default-series-exclusion.md)) |
 | A team spoofs another namespace's label and triggers drops on its monitors | `enforcedNamespaceLabel` required for Enforce mode ([ADR 0003](../adr/0003-series-attribution.md)) |
