@@ -28,6 +28,11 @@ The first published release. v0.1 to v0.3 were lab milestones and were never pub
 - Kustomize and Helm installs for linux/amd64 and linux/arm64; signed images with an SBOM and build
   provenance.
 
+### Changed
+
+- The operator logs JSON in production mode (stack traces only on errors, no panic on `DPanic`). Pass
+  `--zap-devel` for the human-readable development format.
+
 ### Deprecated
 
 - API version `v1alpha1`. It is still served with the same schema and will be removed in v2.0. Run

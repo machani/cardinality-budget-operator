@@ -90,8 +90,10 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	var operatorOpts config.Options
 	operatorOpts.BindFlags(flag.CommandLine)
+	// Production logging: JSON, stack traces only on errors, and no panic on DPanic (the scaffold's
+	// Development mode would crash the operator there). --zap-devel switches back for local debugging.
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
