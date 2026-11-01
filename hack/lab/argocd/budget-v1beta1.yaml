@@ -1,0 +1,10 @@
+# verify-v1.0.md 3g: the same budget moved to v1beta1 in Git, synced by Argo CD. maxActiveSeries differs
+# from budget-v1alpha1.yaml, so a successful sync is visible on the object.
+apiVersion: cardinality.telemetry-compass.com/v1beta1
+kind: CardinalityBudget
+metadata:
+  name: default
+  namespace: argo-budget
+spec:
+  maxActiveSeries: 2000
+  mode: Observe

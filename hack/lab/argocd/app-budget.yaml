@@ -1,0 +1,18 @@
+# verify-v1.0.md 3g: only budget-v1beta1.yaml from this directory. No automated sync: each sync is started by
+# hand, first plain (client-side apply), then with ServerSideApply=true.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: budget
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/machani/cardinality-budget-operator.git
+    targetRevision: fix/production-logging
+    path: hack/lab/argocd
+    directory:
+      include: budget-v1beta1.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-budget

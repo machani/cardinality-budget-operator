@@ -27,6 +27,7 @@ Each needs explicit acceptance before v1.0.0 is tagged. Accepted exceptions are 
 | E3 | The operator's ServiceMonitor uses `insecureSkipVerify` unless cert-manager is enabled | A spoofed metrics endpoint could feed false operator metrics to Prometheus (no effect on enforcement) | Documented: Helm `certManager.enabled`, Kustomize `monitor_tls_patch.yaml` | Decide the default in v1.1 | — |
 | E4 | NetworkPolicy restricts ingress only | A compromised operator pod can reach any address | Pod hardening; no Secrets access | Egress example in the docs | — |
 | E5 | Helm chart: default `manager.replicas: 1` (generated) and no way to mount a Prometheus HTTP client config | Single replica if the install guide is not followed; Helm users cannot authenticate to Prometheus | Install guide sets 2 replicas; Kustomize supports the HTTP config | Chart values for both once the plugin allows it | — |
+| E6 | A GitOps sync of a monitor removes the operator's drops; no Argo CD setting prevents it ([ADR 0019](adr/0019-gitops-managed-monitors.md)) | Enforce mode stops at the next sync in namespaces whose monitors are synced from Git | The budget pauses and alerts, never re-applies; [GitOps guide](guides/gitops.md) recommends Warn mode or moving drops into Git | V2 "GitOps coexistence" | — |
 
 ## Before tagging v1.0.0
 
@@ -35,5 +36,5 @@ Each needs explicit acceptance before v1.0.0 is tagged. Accepted exceptions are 
       `storedVersions` is `["v1beta1"]` and existing budgets keep their status and drops.
 - [ ] Release dry run on `dev`: signed image, SBOM attestation and provenance verified with the commands in
       [releasing](releasing.md#verify-a-release).
-- [ ] Exceptions E1 to E5 accepted (column above).
+- [ ] Exceptions E1 to E6 accepted (column above).
 - [ ] CHANGELOG `[Unreleased]` renamed to `[1.0.0]`, README status changed from alpha.
