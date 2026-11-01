@@ -19,11 +19,23 @@ Goal: a budget created through `v1alpha1` by v0.3, with a drop in place, keeps i
 v1.0 is installed; the migration script moves it to `v1beta1` storage without changing anything else.
 
 1a. Build both images first. The v0.3 build is `dev` before the v1.0 merge (`1e0a2ef`), in a worktree outside
-`/tmp`:
+`/tmp`. Two builds need more memory than the 3.8 GiB box has next to a running lab, and the kernel kills a kind
+node (`docker ps -a` shows `Exited (137)`). So pause the lab, build, then start it and load the images:
 
 ```bash
-git worktree add /opt/cbo-v0.3 1e0a2ef && cd /opt/cbo-v0.3 && make docker-build IMG=cardinality-budget-operator:v0.3 && cd /opt/cardinality-budget-operator && make docker-build IMG=cardinality-budget-operator:v1.0 && kind load docker-image cardinality-budget-operator:v0.3 cardinality-budget-operator:v1.0 --name cb-dev
+docker stop cb-dev-worker cb-dev-control-plane
 ```
+
+```bash
+git worktree add /opt/cbo-v0.3 1e0a2ef && cd /opt/cbo-v0.3 && make docker-build IMG=cardinality-budget-operator:v0.3 && cd /opt/cardinality-budget-operator && make docker-build IMG=cardinality-budget-operator:v1.0
+```
+
+```bash
+docker start cb-dev-control-plane cb-dev-worker && kubectl --context kind-cb-dev wait node --all --for=condition=Ready --timeout=300s && kind load docker-image cardinality-budget-operator:v0.3 cardinality-budget-operator:v1.0 --name cb-dev
+```
+
+Prometheus restarted with the nodes: wait out its 15-minute warm-up before 1d
+([Part 0](verify-v0.3.md#part-0-prepare) shows how to check). 1b and 1c can run meanwhile.
 
 1b. Deploy v0.3 and create the budget **from the worktree**: its CRD and `budget.yaml` know only `v1alpha1`,
 like a real v0.3 user:
@@ -106,16 +118,25 @@ the diff against 1i prints nothing except, at most, a drop state that moved on i
 operator logged no error since the upgrade:
 
 ```bash
-hack/migrate-storage.sh --context kind-cb-dev && kubectl --context kind-cb-dev -n demo get cb default -o json | jq -S '{spec, drops: .status.enforcedDrops, resume: .status.lastResumeToken}' | diff /root/v10-budget.json - ; kubectl --context kind-cb-dev -n cardinality-budget-operator-system logs deployment/cardinality-budget-operator-controller-manager --since=30m | grep -cE '"level":"error"|[[:space:]]ERROR[[:space:]]'
+hack/migrate-storage.sh --context kind-cb-dev && kubectl --context kind-cb-dev -n demo get cb default -o json | jq -S '{spec, drops: .status.enforcedDrops, resume: .status.lastResumeToken}' | diff /root/v10-budget.json - ; leader=$(kubectl --context kind-cb-dev -n cardinality-budget-operator-system get lease c4f5a295.telemetry-compass.com -o jsonpath='{.spec.holderIdentity}' | cut -d_ -f1); echo "leader: $leader"; kubectl --context kind-cb-dev -n cardinality-budget-operator-system logs "$leader" --since=40m | grep -cE '"level":"error"|[[:space:]]ERROR[[:space:]]'
 ```
 
-The last number should be `0`.
+The last number should be `0`. The count reads the **leader's** log: `kubectl logs deployment/...` picks one of the
+two pods at random, and the standby logs nothing.
 
-1l. New manifests use `v1beta1`. The repository's `budget.yaml` already does; applying it changes only the
-fields it sets (the limit, back to 900) and prints no warning:
+1l. New manifests use `v1beta1`. The repository's `budget.yaml` already does. A plain `kubectl apply` fails with
+`metadata.resourceVersion: Invalid value: 0: must be specified for an update`, because the budget's
+`last-applied-configuration` annotation (from 1b) still holds `v1alpha1` and the patch would change the
+version. Expected: that error, then two `configured` lines after updating the annotation, and the budget still
+`Enforcing` with its drops (runbook "Upgrade to v1.0", step 3):
 
 ```bash
 kubectl --context kind-cb-dev apply -f hack/lab/demo/budget.yaml
+```
+
+```bash
+kubectl --context kind-cb-dev apply set-last-applied -f hack/lab/demo/budget.yaml && kubectl --context kind-cb-dev apply -f hack/lab/demo/budget.yaml && kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='{.status.phase} {.status.enforcedDrops[*].metric}{"
+"}'
 ```
 
 Leave the lab as it is for Part 2 or go to "Stop and reset".
@@ -170,5 +191,5 @@ Delete old dry-run versions on the package page when you no longer need them.
 Stop, keep the lab as it is, and save what you see before changing anything:
 
 ```bash
-kubectl --context kind-cb-dev -n demo get cb default -o yaml > /root/fail-budget.yaml; kubectl --context kind-cb-dev get crd cardinalitybudgets.cardinality.telemetry-compass.com -o yaml > /root/fail-crd.yaml; kubectl --context kind-cb-dev -n cardinality-budget-operator-system logs deployment/cardinality-budget-operator-controller-manager --since=1h > /root/fail-operator.log
+kubectl --context kind-cb-dev -n demo get cb default -o yaml > /root/fail-budget.yaml; kubectl --context kind-cb-dev get crd cardinalitybudgets.cardinality.telemetry-compass.com -o yaml > /root/fail-crd.yaml; for p in $(kubectl --context kind-cb-dev -n cardinality-budget-operator-system get pods -o name); do kubectl --context kind-cb-dev -n cardinality-budget-operator-system logs "$p" --since=1h > "/root/fail-$(basename "$p").log"; done
 ```

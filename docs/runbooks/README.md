@@ -127,3 +127,13 @@ v1.0 serves `v1beta1` (stored) and the deprecated `v1alpha1` with the same schem
    It ends with `storedVersions after: ["v1beta1"]`. Safe to run again; required before v2.0, which removes
    `v1alpha1`.
 3. Change `apiVersion` in your manifests (GitOps repositories) to `cardinality.telemetry-compass.com/v1beta1`.
+   A budget created with client-side `kubectl apply` keeps the old version in its `last-applied-configuration`
+   annotation, and the next apply fails with `metadata.resourceVersion: Invalid value: 0: must be specified for
+   an update`. Update the annotation once per budget (spec and status are not changed), then apply as usual:
+
+   ```bash
+   kubectl apply set-last-applied -f budget.yaml && kubectl apply -f budget.yaml
+   ```
+
+   Server-side apply (`kubectl apply --server-side`, Flux) does not use that annotation. For Argo CD, see the
+   [GitOps guide](../guides/gitops.md#budgets-in-git).

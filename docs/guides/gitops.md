@@ -11,6 +11,13 @@ cardinality.telemetry-compass.com/v1beta1`. The operator writes only the status 
 so budgets never show as out of sync. The resume annotation is the one field the operator reacts to that people
 set by hand: set it with `kubectl annotate`, or keep it in Git and change the value to resume.
 
+Moving existing budgets from `v1alpha1` to `v1beta1` in Git: a client-side apply compares with the
+`last-applied-configuration` annotation, which still holds `v1alpha1`, and fails with `metadata.resourceVersion:
+Invalid value: 0` ([runbook](../runbooks/README.md#upgrade-to-v10-move-budgets-to-v1beta1)). Flux uses
+server-side apply and is not affected. For Argo CD (client-side apply by default), sync the budgets once with the
+`ServerSideApply=true` sync option, or run `kubectl apply set-last-applied` on each budget before the sync.
+Not yet tested with Argo CD in the lab.
+
 ## Monitors in Git: what happens on sync
 
 In Enforce mode the operator appends a drop rule to `metricRelabelings` and adds an annotation and a label to
