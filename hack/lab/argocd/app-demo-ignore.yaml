@@ -1,0 +1,34 @@
+# verify-v1.0.md 3d: app-demo.yaml plus the ignoreDifferences block from docs/guides/gitops.md, unchanged.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/machani/cardinality-budget-operator.git
+    targetRevision: fix/production-logging
+    path: hack/lab/demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  ignoreDifferences:
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+      jqPathExpressions:
+        - .spec.endpoints[].metricRelabelings[]? | select(.action == "drop" and .sourceLabels == ["__name__"])
+        - .metadata.annotations["cardinality.telemetry-compass.com/dropped-metrics"]
+        - .metadata.labels["cardinality.telemetry-compass.com/enforced"]
+    - group: monitoring.coreos.com
+      kind: PodMonitor
+      jqPathExpressions:
+        - .spec.podMetricsEndpoints[].metricRelabelings[]? | select(.action == "drop" and .sourceLabels == ["__name__"])
+        - .metadata.annotations["cardinality.telemetry-compass.com/dropped-metrics"]
+        - .metadata.labels["cardinality.telemetry-compass.com/enforced"]
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false
+    syncOptions:
+      - RespectIgnoreDifferences=true

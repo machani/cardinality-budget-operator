@@ -7,7 +7,7 @@ The lab items of the [readiness review](../../docs/readiness-review.md) checklis
 | --- | --- | --- |
 | 1 | Upgrade a v0.3 install with an active drop to v1.0, then migrate storage (F-1001, ADR 0017) | about 50 min |
 | 2 | Release dry run and verifying it like a user (F-1002, ADR 0018) | about 20 min |
-| 3 | Argo CD `ignoreDifferences` from the GitOps guide | later, written after Part 1 passes |
+| 3 | Argo CD and the operator's drop rules, with and without the GitOps guide's `ignoreDifferences`; moving a budget to `v1beta1` through Argo CD | about 45 min |
 
 Before you start: [prerequisites](verify-v0.3.md#prerequisites-once-per-box) and
 [Part 0](verify-v0.3.md#part-0-prepare) of the v0.3 doc, on an up-to-date `dev` that contains v1.0. Part 0
@@ -158,15 +158,17 @@ settings → Change visibility → Public), so it can be pulled and verified wit
 sigstore releases page). Replace `N`; the identity ends in `refs/heads/dev` for a dry run:
 
 ```bash
-cosign verify ghcr.io/machani/cardinality-budget-operator:0.0.0-dryrun.N --certificate-identity https://github.com/machani/cardinality-budget-operator/.github/workflows/release.yml@refs/heads/dev --certificate-oidc-issuer https://token.actions.githubusercontent.com | jq -r '.[0].optional.Subject'
+cosign verify ghcr.io/machani/cardinality-budget-operator:0.0.0-dryrun.N --certificate-identity https://github.com/machani/cardinality-budget-operator/.github/workflows/release.yml@refs/heads/dev --certificate-oidc-issuer https://token.actions.githubusercontent.com | jq -r '.[0].critical.image."docker-manifest-digest"'
 ```
 
 ```bash
 cosign verify-attestation ghcr.io/machani/cardinality-budget-operator:0.0.0-dryrun.N --type spdxjson --certificate-identity https://github.com/machani/cardinality-budget-operator/.github/workflows/release.yml@refs/heads/dev --certificate-oidc-issuer https://token.actions.githubusercontent.com | jq -r .payload | base64 -d | jq -r '.predicate.packages | length'
 ```
 
-Pass: the first prints the workflow identity, the second a package count above 0. A wrong identity (for example
-`refs/heads/main`) must fail with `no matching signatures`.
+Pass: both list the three checks and exit 0 (cosign checks the identity itself); the first prints the signed
+digest (`sha256:…`), the second a package count above 0. (cosign v3 leaves `.optional.Subject` empty, so don't
+read the identity from there.) A wrong identity (for example `refs/heads/main`) must exit 1 with
+`no matching CertificateIdentity found` and the expected and actual SAN (cosign v2 says `no matching signatures`).
 
 2d. Both platforms are in the image:
 
@@ -175,6 +177,143 @@ docker buildx imagetools inspect ghcr.io/machani/cardinality-budget-operator:0.0
 ```
 
 Expected: `linux/amd64` and `linux/arm64` (plus `unknown/unknown` entries, which are the attestations).
+
+## Part 3: Argo CD
+
+Goal: find out what an Argo CD sync really does to the operator's drop rules, and check the
+[GitOps guide](../../docs/guides/gitops.md). Argo CD's default sync is a client-side apply, which compares with
+the `last-applied-configuration` annotation. Our rule is not in it, so a sync probably leaves the rule alone
+until the team changes something under `endpoints` in Git: then the whole list is replaced. 3b and 3c find out;
+3d checks the guide's fix; 3e checks the guide's advice for moving budgets to `v1beta1`.
+
+Argo CD reads [hack/lab/demo](demo/) and [hack/lab/argocd](argocd/) from GitHub, branch
+`fix/production-logging`, so push those files before you start. A team's change in Git is simulated with an
+inline `kustomize.patches` on the Application, so no extra commits are needed.
+
+Start: the end state of Part 1 (v1.0 deployed, demo budget in Enforce, drops `Effective`, not paused). If the
+lab was reset, run Part 1 up to 1h first.
+
+3a. Install Argo CD **core** (no UI, no Dex). Check memory before and after; stop if `available` falls under
+about 400 MiB. Note the version for the guide:
+
+```bash
+free -m && VER=$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | jq -r .tag_name) && echo "Argo CD $VER" && kubectl --context kind-cb-dev create namespace argocd && kubectl --context kind-cb-dev apply -n argocd --server-side --force-conflicts -f "https://raw.githubusercontent.com/argoproj/argo-cd/$VER/manifests/core-install.yaml"
+```
+
+The ApplicationSet controller is not needed; scale it down, then wait for the rest:
+
+```bash
+kubectl --context kind-cb-dev -n argocd scale deployment argocd-applicationset-controller --replicas=0 && kubectl --context kind-cb-dev -n argocd rollout status statefulset argocd-application-controller --timeout=300s && kubectl --context kind-cb-dev -n argocd rollout status deployment argocd-repo-server --timeout=300s && free -m
+```
+
+A helper for the checks below (Application state, the monitor's interval and rules, the budget):
+
+```bash
+chk() { kubectl --context kind-cb-dev -n argocd get application demo -o jsonpath='app: {.status.sync.status} {.status.health.status} last-sync={.status.operationState.phase}{"\n"}'; kubectl --context kind-cb-dev -n demo get servicemonitor avalanche -o jsonpath='monitor: interval={.spec.endpoints[0].interval} rules={.spec.endpoints[0].metricRelabelings[*].regex}{"\n"}'; kubectl --context kind-cb-dev -n demo get cb default -o jsonpath='budget: {.status.phase} {.status.usagePercent}% Enforced={.status.conditions[?(@.type=="Enforced")].reason}{"\n"}{range .status.enforcedDrops[*]}  {.metric} {.state}{"\n"}{end}'; }; chk
+```
+
+3b. Argo CD takes over the demo workload, **without** `ignoreDifferences`, self-heal on
+([app-demo.yaml](argocd/app-demo.yaml)). Wait 2 minutes, then check:
+
+```bash
+kubectl --context kind-cb-dev apply -f hack/lab/argocd/app-demo.yaml
+```
+
+```bash
+chk
+```
+
+Record: is the app `Synced` or `OutOfSync`, and are all drop rules still there with the budget not paused?
+Expected (to be confirmed): `Synced Healthy`, rules unchanged, `Enforced=Applied`.
+
+3c. The team changes the scrape interval in Git (simulated: `30s` to `20s`). Wait 2 minutes, then check:
+
+```bash
+kubectl --context kind-cb-dev -n argocd patch application demo --type=merge -p '{"spec":{"source":{"kustomize":{"patches":[{"target":{"kind":"ServiceMonitor","name":"avalanche"},"patch":"[{\"op\":\"replace\",\"path\":\"/spec/endpoints/0/interval\",\"value\":\"20s\"}]"}]}}}}'
+```
+
+```bash
+chk
+```
+
+Record what happened. Expected (to be confirmed): interval `20s`, no rules left, every drop `Reverted`,
+`Enforced=Paused`; the annotation is still on the monitor (it is not in `last-applied-configuration` either).
+This is the case the guide's ignore is for.
+
+3d. Switch to the guide's `ignoreDifferences` ([app-demo-ignore.yaml](argocd/app-demo-ignore.yaml)), then
+resume the budget:
+
+```bash
+kubectl --context kind-cb-dev apply -f hack/lab/argocd/app-demo-ignore.yaml && kubectl --context kind-cb-dev -n demo annotate cb default --overwrite cardinality.telemetry-compass.com/resume-enforcement=argo1
+```
+
+Usage is over 100% again, so the operator adds a drop once the settle period since the last step has passed (up
+to 10 minutes). Repeat until `rules=` shows at least one rule:
+
+```bash
+chk
+```
+
+Then the team changes the interval again (`20s` to `15s`). Wait 2 minutes and check:
+
+```bash
+kubectl --context kind-cb-dev -n argocd patch application demo --type=merge -p '{"spec":{"source":{"kustomize":{"patches":[{"target":{"kind":"ServiceMonitor","name":"avalanche"},"patch":"[{\"op\":\"replace\",\"path\":\"/spec/endpoints/0/interval\",\"value\":\"15s\"}]"}]}}}}'
+```
+
+```bash
+chk
+```
+
+Pass: `Synced`, interval `15s`, the rules from before still there, no drop `Reverted`, `Enforced` not
+`Paused`. If the rules are gone, the guide's snippet does not protect against this case: keep the lab as it is
+and send me the output of `kubectl --context kind-cb-dev -n argocd get application demo -o yaml`.
+
+3e. A budget applied through `v1alpha1` with client-side apply, then moved to `v1beta1` in Git and synced by
+Argo CD ([app-budget.yaml](argocd/app-budget.yaml), no automated sync). The deprecation warning on the first
+apply is expected:
+
+```bash
+kubectl --context kind-cb-dev apply -f hack/lab/argocd/budget-v1alpha1.yaml && kubectl --context kind-cb-dev apply -f hack/lab/argocd/app-budget.yaml
+```
+
+A helper for the sync result and the budget's limit (1000 from `v1alpha1`, 2000 once the `v1beta1` sync worked):
+
+```bash
+bchk() { kubectl --context kind-cb-dev -n argocd get application budget -o jsonpath='sync: {.status.operationState.phase} {.status.operationState.message}{"\n"}{range .status.operationState.syncResult.resources[*]}  {.kind} {.status} {.message}{"\n"}{end}'; kubectl --context kind-cb-dev -n argo-budget get cb default -o jsonpath='budget: limit={.spec.maxActiveSeries} {.status.phase}{"\n"}'; }
+```
+
+Plain sync (client-side apply), wait 30 seconds, check:
+
+```bash
+kubectl --context kind-cb-dev -n argocd patch application budget --type=merge -p '{"operation":{"initiatedBy":{"username":"lab"},"sync":{"revision":"fix/production-logging"}}}'
+```
+
+```bash
+bchk
+```
+
+Expected (to be confirmed): the sync fails with `metadata.resourceVersion: Invalid value: 0`, limit still 1000.
+Then the guide's fix, a sync with `ServerSideApply=true`, wait 30 seconds, check:
+
+```bash
+kubectl --context kind-cb-dev -n argocd patch application budget --type=merge -p '{"spec":{"syncPolicy":{"syncOptions":["ServerSideApply=true"]}},"operation":{"initiatedBy":{"username":"lab"},"sync":{"revision":"fix/production-logging","syncOptions":["ServerSideApply=true"]}}}'
+```
+
+```bash
+bchk
+```
+
+Pass: `Succeeded`, limit 2000, phase `Healthy`.
+
+3f. Remove Argo CD and the test budget. The Applications have no resources finalizer, so deleting them leaves
+the demo objects in place; the operator removes the test budget's finalizer when the namespace goes:
+
+```bash
+kubectl --context kind-cb-dev -n argocd delete application demo budget && kubectl --context kind-cb-dev delete namespace argo-budget --timeout=120s && kubectl --context kind-cb-dev delete -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/$VER/manifests/core-install.yaml" && kubectl --context kind-cb-dev delete namespace argocd && free -m
+```
+
+(`$VER` is from 3a; set it again if the shell was closed.) The demo monitor keeps Argo CD's tracking annotation
+and the `15s` interval until R4 of "Stop and reset" replaces it from the manifest.
 
 ## Stop and reset
 
