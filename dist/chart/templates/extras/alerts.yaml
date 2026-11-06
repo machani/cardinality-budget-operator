@@ -1,0 +1,85 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "cardinality-budget-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "cardinality-budget-operator.resourceName" (dict "suffix" "alerts" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  groups:
+  - name: cardinality-budget-operator
+    rules:
+    - alert: CardinalityBudgetOperatorDown
+      annotations:
+        description: Budgets are not measured and drops are neither added nor restored.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetoperatordown
+        summary: No CardinalityBudget operator replica is being scraped.
+      expr: absent(up{job="cardinality-budget-operator-controller-manager-metrics-service"}
+        == 1)
+      for: 10m
+      labels:
+        severity: critical
+    - alert: CardinalityBudgetReconcileErrors
+      annotations:
+        description: Unexpected API errors for 15 minutes. Expected states (backend
+          down, conflicts) are not errors.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetreconcileerrors
+        summary: The CardinalityBudget controller keeps failing to reconcile.
+      expr: sum(rate(controller_runtime_reconcile_errors_total{controller="cardinalitybudget"}[10m]))
+        > 0
+      for: 15m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetMeasurementInvalid
+      annotations:
+        description: Phase is Unknown; nothing is planned, dropped or restored. See
+          the budget's Ready condition for the reason.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetmeasurementinvalid
+        summary: Budget in {{ "{{ $labels.budget_namespace }}" }} has no valid measurement.
+      expr: cardinalitybudget_measurement_valid == 0
+      for: 15m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetPaused
+      annotations:
+        description: No new drops until the platform team resumes it with the resume-enforcement
+          annotation.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetpaused
+        summary: Budget in {{ "{{ $labels.budget_namespace }}" }} is paused ({{ "{{ $labels.reason }}" }}).
+      expr: cardinalitybudget_paused == 1
+      for: 5m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetConfigReloadFailed
+      annotations:
+        description: Prometheus may be running an old configuration for every team.
+          Check its config reload status now.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetconfigreloadfailed
+        summary: Prometheus did not load its config after a change for {{ "{{ $labels.budget_namespace }}" }}.
+      expr: cardinalitybudget_paused{reason="ConfigReloadFailed"} == 1
+      for: 1m
+      labels:
+        severity: critical
+    - alert: CardinalityBudgetKillSwitchActive
+      annotations:
+        description: No monitor is changed, including restores and deletion cleanup.
+          Budgets being deleted wait.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetkillswitchactive
+        summary: The global kill switch --enforcement-paused is on.
+      expr: max(cardinalitybudget_enforcement_paused) == 1
+      for: 5m
+      labels:
+        severity: warning
+    - alert: CardinalityBudgetRateLimited
+      annotations:
+        description: At the default --max-drops-per-hour (10) new drops wait. Several
+          namespaces may be exploding at once.
+        runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetratelimited
+        summary: Many drops in the last hour across all budgets.
+      expr: max(cardinalitybudget_drops_last_hour) >= 10
+      for: 5m
+      labels:
+        severity: info

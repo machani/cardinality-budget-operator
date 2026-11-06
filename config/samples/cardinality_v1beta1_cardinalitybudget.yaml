@@ -1,0 +1,20 @@
+apiVersion: cardinality.telemetry-compass.com/v1beta1
+kind: CardinalityBudget
+metadata:
+  labels:
+    app.kubernetes.io/name: cardinality-budget-operator
+    app.kubernetes.io/managed-by: kustomize
+  # One budget per namespace, always named "default" (ADR 0004).
+  name: default
+spec:
+  maxActiveSeries: 50000
+  # Everything below shows the defaults; leaving it out gives the same result.
+  warnThresholdPercent: 90
+  mode: Observe
+  enforcement:
+    gracePeriod: 30m
+    maxMetricsToDrop: 1
+    maxTotalDrops: 5
+    protectedMetrics:
+      - "up"
+      - "slo_.*"

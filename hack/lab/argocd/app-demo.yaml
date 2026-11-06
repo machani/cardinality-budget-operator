@@ -1,0 +1,20 @@
+# verify-v1.0.md 3b and 3c: the demo workload and its ServiceMonitor from Git, self-heal on, no ignoreDifferences.
+# No resources finalizer: deleting the Application leaves the demo objects in place.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/machani/cardinality-budget-operator.git
+    targetRevision: fix/production-logging
+    path: hack/lab/demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false

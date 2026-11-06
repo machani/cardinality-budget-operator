@@ -1,0 +1,11 @@
+# F-0305: the CardinalityBudget dashboard as a ConfigMap. The kube-prometheus-stack Grafana sidecar
+# loads every ConfigMap labelled grafana_dashboard: "1" (in namespaces it watches).
+configMapGenerator:
+  - name: grafana-dashboard
+    files:
+      - cardinalitybudget.json=dashboard.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/name: cardinality-budget-operator

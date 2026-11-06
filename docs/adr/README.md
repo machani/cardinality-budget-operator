@@ -1,0 +1,33 @@
+# Architecture Decision Records
+
+Each file records one design decision: the context, the options considered, what was chosen and why.
+The HLD (`docs/design/hld.md`) describes the design as it is now; ADRs explain how it got there.
+
+Rules:
+
+- Files are numbered `NNNN-short-title.md` and never deleted or renumbered.
+- To change a decision, add a new ADR and set the old one's status to `Superseded by NNNN`.
+- Every HLD change that alters behaviour or the API links to an ADR.
+- Statuses: `Proposed`, `Accepted`, `Superseded by NNNN`, `Deprecated`.
+
+| ADR | Title | Status |
+| --- | --- | --- |
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
+| [0002](0002-budget-ownership-and-rbac.md) | Budget ownership and RBAC | Accepted |
+| [0003](0003-series-attribution.md) | Series attribution: namespace label and exporter exclusion | Accepted |
+| [0004](0004-one-budget-per-namespace.md) | One budget per namespace and the Ready condition | Accepted |
+| [0005](0005-measurement-validity-and-backend-access.md) | Measurement validity and backend access | Accepted |
+| [0006](0006-enforcement-safety.md) | Enforcement safety: caps, effectiveness, settle period, reload check | Accepted |
+| [0007](0007-drop-rule-ownership-and-write-strategy.md) | Drop rule ownership and write strategy | Accepted |
+| [0008](0008-drift-pause-and-resume.md) | Drift, pause and resume | Accepted |
+| [0009](0009-spec-changes-and-restore-order.md) | Spec changes and restore order | Accepted |
+| [0010](0010-rate-limit-and-kill-switch.md) | Global rate limit and kill switch | Accepted |
+| [0011](0011-version-support-policy.md) | Version support policy | Accepted |
+| [0012](0012-protected-metrics-validation.md) | Protected metrics validation | Accepted |
+| [0013](0013-default-series-exclusion.md) | Default series exclusion (refines 0003) | Accepted |
+| [0014](0014-spec-defaults.md) | Spec defaults | Accepted |
+| [0015](0015-events-and-condition-reasons.md) | Events in every mode, condition reasons, and Stale | Accepted |
+| [0016](0016-enforcement-details.md) | Enforcement details: effectiveness baseline, restore step, ownership edge cases | Accepted |
+| [0017](0017-api-v1beta1.md) | API v1beta1 without a conversion webhook | Accepted |
+| [0018](0018-release-pipeline.md) | Release pipeline: ghcr.io, keyless signing, SBOM, CHANGELOG | Accepted |
+| [0019](0019-gitops-managed-monitors.md) | Monitors synced by GitOps tools: a documented limit in v1 (refines 0008) | Accepted |

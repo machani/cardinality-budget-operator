@@ -1,0 +1,15 @@
+# verify-v1.0.md 3g: a budget created with client-side apply through v1alpha1, as before the upgrade.
+# The namespace has no series, so the budget stays Healthy and the operator writes no monitor.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-budget
+---
+apiVersion: cardinality.telemetry-compass.com/v1alpha1
+kind: CardinalityBudget
+metadata:
+  name: default
+  namespace: argo-budget
+spec:
+  maxActiveSeries: 1000
+  mode: Observe

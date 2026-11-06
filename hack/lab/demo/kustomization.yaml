@@ -1,0 +1,4 @@
+# For Argo CD in the v1.0 lab (verify-v1.0.md Part 3): it manages only the workload and its ServiceMonitor,
+# not budget.yaml, which the lab changes by hand. kubectl apply -f on the single files works as before.
+resources:
+  - avalanche.yaml
