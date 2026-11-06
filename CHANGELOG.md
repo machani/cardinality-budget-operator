@@ -8,6 +8,8 @@ adds a line under `[Unreleased]`; a release renames that section to the version 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-06
+
 The first published release. v0.1 to v0.3 were lab milestones and were never published.
 
 ### Added
