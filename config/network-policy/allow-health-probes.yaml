@@ -1,0 +1,22 @@
+# F-0303: the health-probe port stays open so the kubelet's liveness and readiness probes work with every
+# network plugin. A separate policy, so the Helm plugin keeps port 8081 (it rewrites ports only in
+# allow-metrics-traffic). Policies on the same pods add up: 8443 from labelled namespaces, 8081 from anywhere.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: cardinality-budget-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: allow-health-probes
+  namespace: system
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: cardinality-budget-operator
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8081
+          protocol: TCP

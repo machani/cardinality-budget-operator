@@ -24,8 +24,16 @@ No replica is scraped. Budgets keep their last status; nothing is dropped or res
 1. `kubectl -n cardinality-budget-operator-system get pods,events`
 2. Crash at start: `kubectl -n cardinality-budget-operator-system logs deploy/cardinality-budget-operator-controller-manager`.
    "invalid operator configuration" lists every bad flag; fix the Deployment args.
-3. Running but not scraped: the Prometheus namespace needs the label `metrics=enabled` (NetworkPolicy), and
-   Prometheus's service account needs the `cardinality-budget-operator-metrics-reader` ClusterRole.
+3. Running but not scraped, in the Prometheus that scrapes the operator (not necessarily the measured one;
+   [install guide, Prometheus roles](../guides/install.md#prometheus-roles)):
+   - its `serviceMonitorSelector` must match the ServiceMonitor's labels (Helm: `prometheus.labels`);
+   - its namespace needs the label `metrics=enabled` (NetworkPolicy);
+   - its service account needs the `cardinality-budget-operator-metrics-reader` ClusterRole.
+   `/targets` in that Prometheus shows the operator's endpoints and the scrape error.
+
+The alert fires when no series `cardinalitybudget_enforcement_paused` arrives (every replica exports it), so it
+works for any release name. In a Prometheus that loads the rule but never scrapes the operator it always fires:
+load the rule only where the operator is scraped (Helm: the same `prometheus.labels`).
 
 ## CardinalityBudgetReconcileErrors
 
@@ -79,7 +87,8 @@ configuration for every team.
 
 `--enforcement-paused=true` blocks every monitor write, including restores and deletion cleanup.
 
-- Turn it off: set `--enforcement-paused=false` on the Deployment (Helm: `enforcementPaused: false`) and roll out.
+- Turn it off: remove `--enforcement-paused` (or set it to `false`) in the Deployment's args and roll out. Helm:
+  remove it from `manager.args` in your values file and run `helm upgrade` (the chart has no separate value).
 - While it is on, budgets being deleted wait. To delete one anyway, remove its rules by hand (below), then
   remove the finalizer.
 
@@ -88,6 +97,11 @@ configuration for every team.
 `--max-drops-per-hour` (default 10) is reached across all budgets: new drops wait until the hour moves on.
 Several namespaces exploding at once usually means a shared library or exporter change. Find it with the
 dashboard's usage panel before raising the limit.
+
+The alert's threshold is fixed at 10, the default. If you change `--max-drops-per-hour`, change the `>= 10` in
+the `CardinalityBudgetRateLimited` rule to the same value, otherwise it fires too early or never. Kustomize:
+patch `config/prometheus/alerts.yaml`. Helm: the threshold is not a chart value; the alert is `info`, so with a
+non-default limit silence it in Alertmanager and watch the dashboard's "Drops in the last hour" instead.
 
 ## Procedures
 

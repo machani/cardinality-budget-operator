@@ -76,6 +76,17 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: helm lint ./dist/chart
 
+      # v1.0.1: prometheus.labels reaches the ServiceMonitor and the PrometheusRule (B2), both follow
+      # prometheus.enabled, and the metrics port is only open to labelled namespaces (B1, also in make verify).
+      - name: Render checks
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          out=$(helm template t ./dist/chart --set prometheus.labels.release=x)
+          test "$(yq -N 'select(.kind == "ServiceMonitor" or .kind == "PrometheusRule") | .metadata.labels.release' <<<"$out" | grep -c '^x$')" = 2
+          test "$(yq -N 'select(.kind == "NetworkPolicy") | .spec.ingress[] | select(.from == null) | .ports[].port' <<<"$out")" = 8081
+          off=$(helm template t ./dist/chart --set prometheus.enabled=false)
+          ! grep -qE '^kind: (ServiceMonitor|PrometheusRule)$' <<<"$off"
+
       - name: Install
         if: steps.changes.outputs.docs_only != 'true'
         run: |
