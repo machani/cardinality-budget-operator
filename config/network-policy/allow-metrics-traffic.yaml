@@ -1,7 +1,9 @@
-# F-0303: only pods in namespaces labelled 'metrics: enabled' (for example the monitoring namespace
-# running Prometheus) may reach the operator's authenticated metrics port. The health-probe port stays
-# open so the kubelet's probes work with every network plugin. Everything else is denied.
+# F-0303: only pods in namespaces labelled 'metrics: enabled' (the namespace of the Prometheus that scrapes the
+# operator, for example monitoring) may reach the operator's authenticated metrics port. Everything else is
+# denied, except the health-probe port in allow-health-probes.yaml.
 #   kubectl label namespace monitoring metrics=enabled
+# Keep this policy to the one metrics rule: the Helm plugin rewrites every ingress port of a policy with this
+# name to .Values.metrics.port (v1.0.1 fix: a second rule here became "8443 from anywhere" in the chart).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -24,7 +26,4 @@ spec:
               metrics: enabled
       ports:
         - port: 8443
-          protocol: TCP
-    - ports:
-        - port: 8081
           protocol: TCP

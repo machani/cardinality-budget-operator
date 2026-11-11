@@ -26,7 +26,7 @@ so the main question is: who can make it drop the wrong metrics, or stop it from
 | GitOps fights the operator | Drift detection pauses instead of re-applying | ADR 0008 |
 | Leaked Prometheus credentials | Credentials only from mounted files; inline secrets rejected; URL userinfo rejected and never logged | ADR 0005, `internal/config` |
 | Compromised operator pod changes more than monitors | Minimal RBAC: budgets, budget status/finalizers, monitors (patch only), events; no Secrets, no Prometheus objects | `config/rbac/role.yaml` |
-| Unauthenticated metrics scraping | Metrics served over HTTPS with Kubernetes authn/authz; NetworkPolicy allows only labelled namespaces | `config/default`, `config/network-policy` |
+| Unauthenticated metrics scraping | Metrics served over HTTPS with Kubernetes authn/authz; NetworkPolicy allows only labelled namespaces on the metrics port (Helm chart 1.0.0 allowed every namespace; fixed in 1.0.1, checked by `make verify` and `test-chart.yml`) | `config/default`, `config/network-policy`, `hack/ci/check-chart.sh` |
 | Container escape or tampering | Non-root, read-only root filesystem, no privilege escalation, all capabilities dropped, seccomp RuntimeDefault, distroless image | `config/manager/manager.yaml`, `Dockerfile` |
 | Vulnerable dependencies or base image | govulncheck and Trivy in CI, Dependabot weekly | `.github/` |
 | Two replicas both enforcing | Leader election; only the leader reconciles; status-derived counts | F-0302, ADR 0010 |

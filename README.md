@@ -121,8 +121,10 @@ make helm-deploy IMG=<registry>/cardinality-budget-operator:<tag>
 `make helm-deploy` installs two replicas. The generated chart defaults to `manager.replicas: 1`, so add
 `--set manager.replicas=2` when you run `helm install` yourself.
 
-Point `--prometheus-url` at your Prometheus (the default is the lab's `kps-prometheus.monitoring.svc:9090`), and
-label the Prometheus namespace `metrics=enabled` so it may scrape the operator through the NetworkPolicy.
+Point `--prometheus-url` at the Prometheus to measure (the default is the lab's
+`kps-prometheus.monitoring.svc:9090`). For the operator's own metrics and alerts, label the namespace of the
+Prometheus that **scrapes the operator** `metrics=enabled` (NetworkPolicy) and set `prometheus.labels` to what
+its selectors need ([install guide, Prometheus roles](docs/guides/install.md#prometheus-roles)).
 
 To uninstall, delete all budgets first so the operator can remove its drop rules, then remove the operator:
 

@@ -1,3 +1,4 @@
+{{- if .Values.prometheus.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -6,6 +7,11 @@ metadata:
     app.kubernetes.io/name: {{ include "cardinality-budget-operator.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- with .Values.prometheus.labels }}
+    {{- with omit . "app.kubernetes.io/managed-by" "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
   name: {{ include "cardinality-budget-operator.resourceName" (dict "suffix" "alerts" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
@@ -17,8 +23,7 @@ spec:
         description: Budgets are not measured and drops are neither added nor restored.
         runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetoperatordown
         summary: No CardinalityBudget operator replica is being scraped.
-      expr: absent(up{job="cardinality-budget-operator-controller-manager-metrics-service"}
-        == 1)
+      expr: absent(cardinalitybudget_enforcement_paused)
       for: 10m
       labels:
         severity: critical
@@ -83,3 +88,4 @@ spec:
       for: 5m
       labels:
         severity: info
+{{- end }}

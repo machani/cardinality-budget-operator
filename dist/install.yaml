@@ -1000,6 +1000,7 @@ data:
     {
       "title": "CardinalityBudget",
       "uid": "cardinalitybudget",
+      "description": "Namespace series budgets and the CardinalityBudget operator's own health. Runbooks: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md",
       "tags": ["cardinality", "prometheus"],
       "timezone": "browser",
       "schemaVersion": 39,
@@ -1017,54 +1018,124 @@ data:
       },
       "panels": [
         {
-          "type": "stat", "title": "Kill switch", "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+          "type": "row", "title": "Budgets", "collapsed": false, "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "panels": []
+        },
+        {
+          "type": "stat", "title": "Replicas scraped", "gridPos": {"x": 0, "y": 1, "w": 4, "h": 4},
+          "description": "Operator pods whose metrics reach this Prometheus. 0 = no budget is measured (runbook: CardinalityBudgetOperatorDown). The default install runs 2.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "count(cardinalitybudget_enforcement_paused) or vector(0)", "refId": "A"}],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 1}, {"color": "green", "value": 2}]}}}
+        },
+        {
+          "type": "stat", "title": "Kill switch", "gridPos": {"x": 4, "y": 1, "w": 4, "h": 4},
+          "description": "ON = --enforcement-paused is set: no monitor is changed, including restores and deletion cleanup (runbook: CardinalityBudgetKillSwitchActive).",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
           "targets": [{"expr": "max(cardinalitybudget_enforcement_paused)", "refId": "A"}],
-          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "Off"}, "1": {"text": "ON", "color": "red"}}}]}}
+          "fieldConfig": {"defaults": {
+            "mappings": [{"type": "value", "options": {"0": {"text": "Off", "color": "green"}, "1": {"text": "ON", "color": "red"}}}],
+            "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+          }}
         },
         {
-          "type": "stat", "title": "Budgets paused", "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+          "type": "stat", "title": "Budgets paused", "gridPos": {"x": 8, "y": 1, "w": 4, "h": 4},
+          "description": "Budgets that add no new drops until a person resumes them (drift, ineffective drop, failed reload). See the Paused budgets table and the runbook CardinalityBudgetPaused.",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "count(cardinalitybudget_paused == 1) or vector(0)", "refId": "A"}]
+          "targets": [{"expr": "count(max by (budget_namespace) (cardinalitybudget_paused) == 1) or vector(0)", "refId": "A"}],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
         },
         {
-          "type": "stat", "title": "Budgets without a valid measurement", "gridPos": {"x": 8, "y": 0, "w": 5, "h": 4},
+          "type": "stat", "title": "No valid measurement", "gridPos": {"x": 12, "y": 1, "w": 4, "h": 4},
+          "description": "Budgets in phase Unknown: Prometheus unreachable, warming up, partial or stale data, or an invalid spec (InvalidSpec counts too). Nothing is planned, dropped or restored for them. Check the budget's Ready condition.",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "count(cardinalitybudget_measurement_valid == 0) or vector(0)", "refId": "A"}]
+          "targets": [{"expr": "count(max by (budget_namespace) (cardinalitybudget_measurement_valid) == 0) or vector(0)", "refId": "A"}],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
         },
         {
-          "type": "stat", "title": "Drops in the last hour (all budgets)", "gridPos": {"x": 13, "y": 0, "w": 5, "h": 4},
+          "type": "stat", "title": "Drops in the last hour", "gridPos": {"x": 16, "y": 1, "w": 4, "h": 4},
+          "description": "New drops across all budgets in the last hour. At --max-drops-per-hour (default 10) new drops wait. Colours assume the default.",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "max(cardinalitybudget_drops_last_hour)", "refId": "A"}]
+          "targets": [{"expr": "max(cardinalitybudget_drops_last_hour)", "refId": "A"}],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 5}, {"color": "red", "value": 10}]}}}
         },
         {
-          "type": "stat", "title": "Reconcile errors (10m)", "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+          "type": "stat", "title": "Reconcile errors (10m)", "gridPos": {"x": 20, "y": 1, "w": 4, "h": 4},
+          "description": "Unexpected API errors. Expected states (backend down, conflicts) are not errors (runbook: CardinalityBudgetReconcileErrors).",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "sum(increase(controller_runtime_reconcile_errors_total{controller=\"cardinalitybudget\"}[10m]))", "refId": "A"}]
+          "targets": [{"expr": "sum(increase(controller_runtime_reconcile_errors_total{controller=\"cardinalitybudget\"}[10m])) or vector(0)", "refId": "A"}],
+          "fieldConfig": {"defaults": {"decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
         },
         {
-          "type": "timeseries", "title": "Usage (share of budget)", "gridPos": {"x": 0, "y": 4, "w": 12, "h": 9},
+          "type": "timeseries", "title": "Usage (share of budget)", "gridPos": {"x": 0, "y": 5, "w": 12, "h": 9},
+          "description": "Active series divided by maxActiveSeries at the last valid measurement. Lines: 90% (default warn threshold) and 100%. Drops are restored only below the warn threshold.",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "cardinalitybudget_usage_ratio{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}}", "refId": "A"}],
-          "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.9}, {"color": "red", "value": 1}]}}}
+          "targets": [{"expr": "max by (budget_namespace) (cardinalitybudget_usage_ratio{budget_namespace=~\"$budget_namespace\"})", "legendFormat": "{{budget_namespace}}", "refId": "A"}],
+          "fieldConfig": {"defaults": {
+            "unit": "percentunit", "min": 0,
+            "custom": {"thresholdsStyle": {"mode": "line+area"}},
+            "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 0.9}, {"color": "red", "value": 1}]}
+          }}
         },
         {
-          "type": "timeseries", "title": "Active series and limit", "gridPos": {"x": 12, "y": 4, "w": 12, "h": 9},
+          "type": "timeseries", "title": "Active series and limit", "gridPos": {"x": 12, "y": 5, "w": 12, "h": 9},
+          "description": "Solid: active series in the namespace. Dashed: the budget's maxActiveSeries.",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
           "targets": [
-            {"expr": "cardinalitybudget_active_series{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}} series", "refId": "A"},
-            {"expr": "cardinalitybudget_limit{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}} limit", "refId": "B"}
-          ]
+            {"expr": "max by (budget_namespace) (cardinalitybudget_active_series{budget_namespace=~\"$budget_namespace\"})", "legendFormat": "{{budget_namespace}} series", "refId": "A"},
+            {"expr": "max by (budget_namespace) (cardinalitybudget_limit{budget_namespace=~\"$budget_namespace\"})", "legendFormat": "{{budget_namespace}} limit", "refId": "B"}
+          ],
+          "fieldConfig": {
+            "defaults": {"unit": "short", "min": 0},
+            "overrides": [{"matcher": {"id": "byFrameRefID", "options": "B"}, "properties": [{"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}}]}]
+          }
         },
         {
-          "type": "timeseries", "title": "Metrics dropped per budget", "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+          "type": "timeseries", "title": "Metrics dropped per budget", "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+          "description": "Metrics currently dropped by drop rules on the namespace's monitors (Enforce mode). The list is in the budget's status.enforcedDrops.",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "cardinalitybudget_drops_active{budget_namespace=~\"$budget_namespace\"}", "legendFormat": "{{budget_namespace}}", "refId": "A"}]
+          "targets": [{"expr": "max by (budget_namespace) (cardinalitybudget_drops_active{budget_namespace=~\"$budget_namespace\"})", "legendFormat": "{{budget_namespace}}", "refId": "A"}],
+          "fieldConfig": {"defaults": {"decimals": 0, "min": 0}}
         },
         {
-          "type": "table", "title": "Paused budgets", "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+          "type": "table", "title": "Paused budgets", "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+          "description": "Budgets waiting for a person, with the reason. Resume with the annotation cardinality.telemetry-compass.com/resume-enforcement (runbook: CardinalityBudgetPaused).",
           "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "targets": [{"expr": "cardinalitybudget_paused == 1", "format": "table", "instant": true, "refId": "A"}]
+          "targets": [{"expr": "max by (budget_namespace, reason) (cardinalitybudget_paused) == 1", "format": "table", "instant": true, "refId": "A"}],
+          "transformations": [{"id": "organize", "options": {
+            "excludeByName": {"Time": true, "Value": true},
+            "renameByName": {"budget_namespace": "Namespace", "reason": "Reason"}
+          }}]
+        },
+        {
+          "type": "row", "title": "Operator health", "collapsed": false, "gridPos": {"x": 0, "y": 22, "w": 24, "h": 1}, "panels": []
+        },
+        {
+          "type": "stat", "title": "Leader", "gridPos": {"x": 0, "y": 23, "w": 6, "h": 8},
+          "description": "The replica that holds the leader lease and runs the reconciler. The other replica waits. No value = no leader (both down or the lease is stuck).",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "max by (pod) (leader_election_master_status{name=\"c4f5a295.telemetry-compass.com\"}) == 1", "legendFormat": "{{pod}}", "instant": true, "refId": "A"}],
+          "options": {"textMode": "name", "colorMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+        },
+        {
+          "type": "timeseries", "title": "Reconciles per second, by result", "gridPos": {"x": 6, "y": 23, "w": 6, "h": 8},
+          "description": "success, requeue_after (timed measurements) and error. Errors here feed the Reconcile errors stat.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "sum by (result) (rate(controller_runtime_reconcile_total{controller=\"cardinalitybudget\"}[5m]))", "legendFormat": "{{result}}", "refId": "A"}],
+          "fieldConfig": {"defaults": {"unit": "ops", "min": 0}}
+        },
+        {
+          "type": "timeseries", "title": "Reconcile duration (p95)", "gridPos": {"x": 12, "y": 23, "w": 6, "h": 8},
+          "description": "Includes the Prometheus queries. Rising values usually mean a slow Prometheus.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(controller_runtime_reconcile_time_seconds_bucket{controller=\"cardinalitybudget\"}[5m])))", "legendFormat": "p95", "refId": "A"}],
+          "fieldConfig": {"defaults": {"unit": "s", "min": 0}}
+        },
+        {
+          "type": "timeseries", "title": "Work queue depth", "gridPos": {"x": 18, "y": 23, "w": 6, "h": 8},
+          "description": "Budgets waiting to be reconciled. Should stay near 0; a growing queue means reconciles are slower than requests.",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "targets": [{"expr": "max(workqueue_depth{name=\"cardinalitybudget\"})", "legendFormat": "depth", "refId": "A"}],
+          "fieldConfig": {"defaults": {"decimals": 0, "min": 0}}
         }
       ]
     }
@@ -1209,8 +1280,7 @@ spec:
         description: Budgets are not measured and drops are neither added nor restored.
         runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetoperatordown
         summary: No CardinalityBudget operator replica is being scraped.
-      expr: absent(up{job="cardinality-budget-operator-controller-manager-metrics-service"}
-        == 1)
+      expr: absent(cardinalitybudget_enforcement_paused)
       for: 10m
       labels:
         severity: critical
@@ -1306,6 +1376,26 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: cardinality-budget-operator
+  name: cardinality-budget-operator-allow-health-probes
+  namespace: cardinality-budget-operator-system
+spec:
+  ingress:
+  - ports:
+    - port: 8081
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cardinality-budget-operator
+      control-plane: controller-manager
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cardinality-budget-operator
   name: cardinality-budget-operator-allow-metrics-traffic
   namespace: cardinality-budget-operator-system
 spec:
@@ -1316,9 +1406,6 @@ spec:
           metrics: enabled
     ports:
     - port: 8443
-      protocol: TCP
-  - ports:
-    - port: 8081
       protocol: TCP
   podSelector:
     matchLabels:
