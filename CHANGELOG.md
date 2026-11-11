@@ -19,6 +19,7 @@ Fixes found in the first production install. No API or enforcement change.
   chart. Kustomize and `install.yaml` were not affected. **Upgrading closes the port:** label the namespace of
   the Prometheus that scrapes the operator `metrics=enabled` first. Check a 1.0.0 install with
   `kubectl -n <namespace> get networkpolicy -o yaml`.
+- Built with Go 1.27.4 for GO-2026-6859 (HTTP/1 server crash in `net/http`, reported by govulncheck).
 
 ### Fixed
 
