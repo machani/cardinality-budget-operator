@@ -20,6 +20,7 @@ Fixes found in the first production install. No API or enforcement change.
   the Prometheus that scrapes the operator `metrics=enabled` first. Check a 1.0.0 install with
   `kubectl -n <namespace> get networkpolicy -o yaml`.
 - Built with Go 1.27.4 for GO-2026-6859 (HTTP/1 server crash in `net/http`, reported by govulncheck).
+- `golang.org/x/net` 0.62.0 for CVE-2026-78661 (denial of service in `x/net/html`, reported by Trivy).
 
 ### Fixed
 
