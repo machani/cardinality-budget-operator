@@ -4,9 +4,9 @@ Per-namespace Prometheus series budgets for Kubernetes: measure each namespace's
 `CardinalityBudget` resource, and, when asked, cut the biggest metrics gradually and reversibly through the
 namespace's own ServiceMonitors and PodMonitors.
 
-> **Status: alpha (v0.3), v1.0 in progress.** Observe, Warn and Enforce modes work and are tested in CI. Enforce deletes data on
-> purpose, so run v0.x on lab clusters only. Production readiness is the v1.0 goal. No images are published
-> yet; build your own (see [Install](#install)).
+> **Status: v1.0.** Observe, Warn and Enforce modes work and are tested in CI. Enforce deletes data on purpose:
+> start every namespace in Observe or Warn, and read the [install guide](docs/guides/install.md) first. Signed
+> images and Helm charts are published on each [release](https://github.com/machani/cardinality-budget-operator/releases).
 
 ```console
 $ kubectl get cb -A
@@ -100,7 +100,14 @@ A paused budget resumes when the platform team sets
 
 ## Install
 
-Build and push an image to a registry your cluster can pull from:
+Production installs use the published, signed chart (values, Prometheus labels and upgrades:
+[install guide](docs/guides/install.md)):
+
+```bash
+helm install cardinality-budget-operator oci://ghcr.io/machani/charts/cardinality-budget-operator --version X.Y.Z -n cardinality-budget-operator-system --create-namespace --set manager.replicas=2
+```
+
+From source, build and push an image to a registry your cluster can pull from:
 
 ```bash
 make docker-build docker-push IMG=<registry>/cardinality-budget-operator:<tag>
@@ -121,8 +128,10 @@ make helm-deploy IMG=<registry>/cardinality-budget-operator:<tag>
 `make helm-deploy` installs two replicas. The generated chart defaults to `manager.replicas: 1`, so add
 `--set manager.replicas=2` when you run `helm install` yourself.
 
-Point `--prometheus-url` at your Prometheus (the default is the lab's `kps-prometheus.monitoring.svc:9090`), and
-label the Prometheus namespace `metrics=enabled` so it may scrape the operator through the NetworkPolicy.
+Point `--prometheus-url` at the Prometheus to measure (the default is the lab's
+`kps-prometheus.monitoring.svc:9090`). For the operator's own metrics and alerts, label the namespace of the
+Prometheus that **scrapes the operator** `metrics=enabled` (NetworkPolicy) and set `prometheus.labels` to what
+its selectors need ([install guide, Prometheus roles](docs/guides/install.md#prometheus-roles)).
 
 To uninstall, delete all budgets first so the operator can remove its drop rules, then remove the operator:
 
@@ -237,8 +246,8 @@ checks tidy modules, generated files and license headers. After changing `api/` 
 - **v0.1** Observe and Warn: done
 - **v0.2** Enforce: done
 - **v0.3** Hardening (HA, security, rate limit, Helm, CI matrix): done (scale tests pending)
-- **v1.0** API `v1beta1`, signed releases with SBOM, full documentation, production readiness review: in
-  progress
+- **v1.0** API `v1beta1`, signed releases with SBOM, full documentation, production readiness review:
+  released (1.0.0, 1.0.1; scale tests and readiness exceptions open)
 
 ## License
 

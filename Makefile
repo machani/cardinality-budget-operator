@@ -113,7 +113,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Verify
 
 .PHONY: verify
-verify: verify-tidy verify-generated verify-license verify-compat ## Run the repository checks CI runs (tidy, generated files, license headers, compatibility matrix).
+verify: verify-tidy verify-generated verify-license verify-compat verify-chart ## Run the repository checks CI runs (tidy, generated files, license headers, compatibility matrix, chart fixes).
 
 .PHONY: verify-tidy
 verify-tidy: ## Fail if go.mod or go.sum are not tidy.
@@ -131,6 +131,10 @@ verify-generated: manifests generate ## Fail if generated code or manifests are 
 .PHONY: verify-compat
 verify-compat: ## Fail if docs/compatibility.md misses a version tested in CI (F-1003).
 	bash hack/ci/check-compat.sh
+
+.PHONY: verify-chart
+verify-chart: ## Fail if dist/chart lost the NetworkPolicy or PrometheusRule-label fixes (run chart-patch).
+	bash hack/ci/check-chart.sh
 
 .PHONY: verify-license
 verify-license: ## Fail if a Go file lacks the Apache-2.0 license header.
@@ -318,6 +322,10 @@ install-helm: ## Install the latest version of Helm.
 		echo "Installing Helm..." && \
 		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
 	}
+
+.PHONY: chart-patch
+chart-patch: ## Run after `kubebuilder edit --plugins=helm/v2-alpha`: add the prometheus.labels value to the PrometheusRule.
+	bash hack/chart/patch-chart.sh
 
 .PHONY: helm-deploy
 helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.

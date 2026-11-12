@@ -13,7 +13,10 @@ spec:
     - name: cardinality-budget-operator
       rules:
         - alert: CardinalityBudgetOperatorDown
-          expr: absent(up{job="cardinality-budget-operator-controller-manager-metrics-service"} == 1)
+          # Every replica sets this gauge at startup (cmd/main.go), and its name is ours alone, so the alert works
+          # for any Helm release name or namespace (v1.0.1; before, it matched a fixed job name). The series goes
+          # stale about 5 minutes after the last successful scrape.
+          expr: absent(cardinalitybudget_enforcement_paused)
           for: 10m
           labels: {severity: critical}
           annotations:
@@ -67,6 +70,7 @@ spec:
             runbook_url: https://github.com/machani/cardinality-budget-operator/blob/dev/docs/runbooks/README.md#cardinalitybudgetkillswitchactive
 
         - alert: CardinalityBudgetRateLimited
+          # 10 = the default --max-drops-per-hour. Change both together (runbook).
           expr: max(cardinalitybudget_drops_last_hour) >= 10
           for: 5m
           labels: {severity: info}

@@ -15,7 +15,7 @@ For the team that runs the operator. Install: [install guide](install.md). Alert
 | `--backend-warmup` | `15m` | Minimum Prometheus uptime for a valid measurement |
 | `--max-measurement-age` | 2 x interval | Age after which a measurement is `Stale` |
 | `--enforcement-settle-period` | `10m` | Wait between enforcement steps |
-| `--max-drops-per-hour` | `10` | New drops per hour across all budgets |
+| `--max-drops-per-hour` | `10` | New drops per hour across all budgets; the `RateLimited` alert assumes 10 ([runbook](../runbooks/README.md#cardinalitybudgetratelimited)) |
 | `--enforcement-paused` | `false` | Kill switch: no monitor writes at all |
 
 An invalid `--exclude-series` or `--prometheus-http-config` stops the operator at startup with a clear error.
@@ -57,7 +57,10 @@ Metrics are served over HTTPS on port 8443 and need a token allowed by the `metr
 
 Alerts (each links its runbook): `CardinalityBudgetOperatorDown`, `ReconcileErrors`, `MeasurementInvalid`,
 `Paused`, `ConfigReloadFailed`, `KillSwitchActive`, `RateLimited`. The Grafana dashboard ships as a ConfigMap
-labelled `grafana_dashboard: "1"`.
+labelled `grafana_dashboard: "1"`. Its top row shows budgets (usage, series and limit, drops, paused budgets);
+the "Operator health" row shows replicas scraped, the leader, reconcile rate, duration and queue depth, from
+controller-runtime's own metrics. Which Prometheus scrapes all this, and the labels it needs:
+[install guide, Prometheus roles](install.md#prometheus-roles).
 
 The operator's own ServiceMonitor uses `insecureSkipVerify` by default (scaffold). In production give the
 metrics endpoint a cert-manager certificate: Helm `certManager.enabled=true`, Kustomize
