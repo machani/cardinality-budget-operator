@@ -8,7 +8,7 @@ adds a line under `[Unreleased]`; a release renames that section to the version 
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-11-11
+## [1.0.1] - 2026-11-12
 
 Fixes found in the first production install. No API or enforcement change.
 
@@ -31,7 +31,8 @@ Fixes found in the first production install. No API or enforcement change.
 - Grafana dashboard: per-budget panels showed two lines after a leader change.
 - Docs: the install guide explains which Prometheus is measured and which scrapes the operator, the selector
   labels and the `metrics=enabled` namespace; the kill-switch runbook named a Helm value that does not exist;
-  the `RateLimited` alert assumes the default `--max-drops-per-hour`.
+  the `RateLimited` alert assumes the default `--max-drops-per-hour`; the README still described v0.3 and
+  unpublished images.
 
 ### Changed
 
